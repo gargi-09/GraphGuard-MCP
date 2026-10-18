@@ -2,7 +2,7 @@
 
 FoGuard watches a facility corridor for obstructions, keeps a verified graph of which corridors are passable, and has an AI agent reroute deliveries around problems without ever approving a path that doesn't exist.
 
-**Dashboard:** `https://YOUR-USERNAME.github.io/GraphGuard-MCP/` (after the GitHub Pages setup below). It lists every feature with a plain-English explanation and lets you try each one in the browser.
+**Dashboard:** [Dashboard Link](https://YOUR-USERNAME.github.io/GraphGuard-MCP/) (after the GitHub Pages setup below). It lists every feature with a plain-English explanation and lets you try each one in the browser.
 
 ## What's in here
 
