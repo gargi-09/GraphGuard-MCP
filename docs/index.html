@@ -1,0 +1,669 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>FoGuard Dashboard</title>
+<meta name="description" content="FoGuard: obstruction detection, a verified facility graph, and AI-driven recovery. Try every feature in the browser.">
+<style>
+:root {
+  --bg: #f6f7f9; --surface: #ffffff; --surface-2: #f0f2f5; --border: #dde1e7;
+  --text: #16181d; --muted: #5b6270; --accent: #2457d6; --accent-soft: #e5ecfc;
+  --ok: #187a3e; --ok-soft: #e2f4e8; --bad: #b42318; --bad-soft: #fbe7e5;
+  --warn: #8a5a00; --warn-soft: #fdf1d8; --code: #eef0f4;
+  --radius: 10px; --shadow: 0 1px 2px rgba(16,24,40,.06);
+}
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    --bg: #0f1115; --surface: #171a21; --surface-2: #1e222b; --border: #2b303b;
+    --text: #e8eaef; --muted: #9aa2b1; --accent: #7aa2ff; --accent-soft: #1f2b47;
+    --ok: #5fd08a; --ok-soft: #15301f; --bad: #ff7b6e; --bad-soft: #3a1a17;
+    --warn: #f0c060; --warn-soft: #362a10; --code: #232833;
+    --shadow: none;
+  }
+}
+:root[data-theme="dark"] {
+  --bg: #0f1115; --surface: #171a21; --surface-2: #1e222b; --border: #2b303b;
+  --text: #e8eaef; --muted: #9aa2b1; --accent: #7aa2ff; --accent-soft: #1f2b47;
+  --ok: #5fd08a; --ok-soft: #15301f; --bad: #ff7b6e; --bad-soft: #3a1a17;
+  --warn: #f0c060; --warn-soft: #362a10; --code: #232833;
+  --shadow: none;
+}
+* { box-sizing: border-box; }
+[hidden] { display: none !important; }
+body { margin: 0; background: var(--bg); color: var(--text);
+  font: 15px/1.55 system-ui, -apple-system, "Segoe UI", Roboto, sans-serif; }
+a { color: var(--accent); }
+code, pre, .mono { font-family: ui-monospace, "Cascadia Code", Consolas, monospace; font-size: 13px; }
+code { background: var(--code); padding: 1px 5px; border-radius: 5px; }
+.wrap { max-width: 1180px; margin: 0 auto; padding: 0 16px; }
+header { background: var(--surface); border-bottom: 1px solid var(--border); position: sticky; top: 0; z-index: 5; }
+.bar { display: flex; flex-wrap: wrap; gap: 12px; align-items: center; justify-content: space-between; padding-top: 12px; padding-bottom: 12px; }
+.brand { display: flex; align-items: baseline; gap: 10px; }
+.brand h1 { margin: 0; font-size: 20px; letter-spacing: -.01em; }
+.brand span { color: var(--muted); font-size: 13px; }
+.controls { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; }
+.seg { display: inline-flex; border: 1px solid var(--border); border-radius: 8px; overflow: hidden; }
+.seg button { border: 0; border-radius: 0; background: var(--surface); color: var(--muted); padding: 6px 12px; }
+.seg button[aria-pressed="true"] { background: var(--accent); color: #fff; }
+input, select, textarea { font: inherit; color: var(--text); background: var(--surface);
+  border: 1px solid var(--border); border-radius: 8px; padding: 6px 10px; min-width: 0; }
+button { font: inherit; cursor: pointer; border: 1px solid var(--border); background: var(--surface-2);
+  color: var(--text); border-radius: 8px; padding: 6px 12px; }
+button.primary { background: var(--accent); border-color: var(--accent); color: #fff; }
+button:disabled { opacity: .5; cursor: not-allowed; }
+button:focus-visible, input:focus-visible, select:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+.pill { display: inline-flex; align-items: center; gap: 6px; font-size: 12px; padding: 3px 9px; border-radius: 999px;
+  background: var(--surface-2); color: var(--muted); border: 1px solid var(--border); white-space: nowrap; }
+.pill.ok { background: var(--ok-soft); color: var(--ok); border-color: transparent; }
+.pill.bad { background: var(--bad-soft); color: var(--bad); border-color: transparent; }
+.pill.warn { background: var(--warn-soft); color: var(--warn); border-color: transparent; }
+.pill .dot { width: 7px; height: 7px; border-radius: 50%; background: currentColor; }
+main { padding: 20px 0 48px; }
+.intro { color: var(--muted); max-width: 820px; margin: 0 0 18px; }
+.mode-note { margin: 0 0 18px; padding: 10px 14px; border-radius: var(--radius); background: var(--accent-soft); font-size: 14px; }
+.grid { display: grid; grid-template-columns: 340px 1fr; gap: 20px; align-items: start; }
+@media (max-width: 900px) { .grid { grid-template-columns: 1fr; } }
+.card { background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius); box-shadow: var(--shadow); }
+.features { display: flex; flex-direction: column; gap: 10px; position: sticky; top: 76px; }
+@media (max-width: 900px) { .features { position: static; } }
+.feature { padding: 12px 14px; }
+.feature h3 { margin: 0 0 4px; font-size: 15px; display: flex; justify-content: space-between; gap: 8px; align-items: center; }
+.feature p { margin: 0 0 8px; color: var(--muted); font-size: 13.5px; }
+.feature details summary { cursor: pointer; font-size: 13px; color: var(--accent); }
+.feature ul { margin: 6px 0 4px; padding-left: 18px; font-size: 13px; color: var(--muted); }
+.feature .meta { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 8px; align-items: center; }
+.panels { display: flex; flex-direction: column; gap: 20px; min-width: 0; }
+.panel { padding: 16px 18px; scroll-margin-top: 80px; }
+.panel h2 { margin: 0 0 4px; font-size: 17px; display: flex; gap: 10px; align-items: center; flex-wrap: wrap; }
+.panel .sub { margin: 0 0 14px; color: var(--muted); font-size: 14px; }
+.row { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; margin-bottom: 10px; }
+.row label { font-size: 13px; color: var(--muted); }
+.out { background: var(--code); border-radius: 8px; padding: 10px 12px; margin-top: 10px; white-space: pre-wrap;
+  word-break: break-word; max-height: 360px; overflow: auto; font-size: 13px; }
+.out:empty { display: none; }
+.result { margin-top: 10px; padding: 10px 12px; border-radius: 8px; font-size: 14px; }
+.result:empty { display: none; }
+.result.ok { background: var(--ok-soft); color: var(--ok); }
+.result.bad { background: var(--bad-soft); color: var(--bad); }
+.map { width: 100%; height: auto; display: block; background: var(--surface-2); border-radius: 8px; }
+.map .edge { stroke: var(--muted); stroke-width: 4; cursor: pointer; }
+.map .edge.blocked { stroke: var(--bad); stroke-dasharray: 8 6; }
+.map .edge.route { stroke: var(--accent); stroke-width: 7; }
+.map .hit { stroke: transparent; stroke-width: 22; cursor: pointer; }
+.map .node circle { fill: var(--surface); stroke: var(--text); stroke-width: 2; }
+.map .node.on-route circle { stroke: var(--accent); stroke-width: 3; }
+.map text { fill: var(--text); font: 600 14px system-ui, sans-serif; }
+.map .dist { fill: var(--muted); font: 12px system-ui, sans-serif; }
+.map .name { fill: var(--muted); font: 11px system-ui, sans-serif; }
+.legend { display: flex; gap: 14px; flex-wrap: wrap; font-size: 12px; color: var(--muted); margin-top: 8px; }
+.legend i { display: inline-block; width: 22px; height: 0; border-top: 3px solid var(--muted); vertical-align: middle; margin-right: 5px; }
+.legend i.b { border-top: 3px dashed var(--bad); }
+.legend i.r { border-top: 4px solid var(--accent); }
+.live-only[data-disabled="true"] { opacity: .55; }
+.notice { font-size: 13px; color: var(--warn); background: var(--warn-soft); padding: 8px 12px; border-radius: 8px; margin: 0 0 10px; }
+.changelog { padding: 16px 18px; }
+.changelog ul { margin: 0; padding-left: 18px; color: var(--muted); font-size: 14px; }
+footer { color: var(--muted); font-size: 13px; padding: 0 0 32px; }
+.sr { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); }
+</style>
+</head>
+<body>
+<header>
+  <div class="wrap bar">
+    <div class="brand"><h1>FoGuard</h1><span id="updated"></span></div>
+    <div class="controls">
+      <div class="seg" role="group" aria-label="Mode">
+        <button id="mode-sim" aria-pressed="true" title="Everything runs in this page; no server needed">Browser</button>
+        <button id="mode-live" aria-pressed="false" title="Drive the real Python code through api_server.py on your computer">Local server</button>
+      </div>
+      <label class="sr" for="api-url">API server URL</label>
+      <input id="api-url" class="mono" size="24" value="http://127.0.0.1:8001" title="Local API server (python api_server.py)" hidden>
+      <span id="conn" class="pill"><span class="dot"></span>in-browser</span>
+      <button id="theme" title="Toggle light/dark">◐</button>
+    </div>
+  </div>
+</header>
+
+<main class="wrap">
+  <p class="intro">FoGuard watches a facility corridor for obstructions, keeps a verified map of which corridors are passable, and has an AI agent reroute deliveries around problems without ever approving a path that doesn't exist. Every feature built so far is listed with a plain-English explanation; use its "Try it" link to run it here.</p>
+  <p class="mode-note" id="mode-note"></p>
+
+  <div class="grid">
+    <aside class="features" id="features" aria-label="Implemented features"></aside>
+
+    <div class="panels">
+      <section class="card panel" id="panel-graph">
+        <h2>Facility graph</h2>
+        <p class="sub">Click a corridor to block or clear it. Blocking closes both directions.</p>
+        <svg class="map" id="map" viewBox="0 0 620 300" role="img" aria-label="Facility map"></svg>
+        <div class="legend"><span><i></i>open</span><span><i class="b"></i>blocked</span><span><i class="r"></i>last route checked</span></div>
+        <div class="row" style="margin-top:12px">
+          <button id="reset">Reset graph (all corridors open)</button>
+          <button id="refresh">Refresh</button>
+        </div>
+        <div class="result" id="graph-result"></div>
+      </section>
+
+      <section class="card panel" id="panel-verifier">
+        <h2>Route verifier guardrail</h2>
+        <p class="sub">Propose any route, including invalid ones, and see the exact reason it's rejected.</p>
+        <div class="row">
+          <label for="v-origin">From</label><select id="v-origin"></select>
+          <label for="v-dest">to</label><select id="v-dest"></select>
+          <label for="v-path">path</label>
+          <input id="v-path" class="mono" value="A,B,C,F" size="16" aria-describedby="v-hint">
+        </div>
+        <p class="sub" id="v-hint" style="margin-top:-4px">Comma-separated waypoint IDs, including both ends. Try <code>A,C,F</code> or <code>A,Z,F</code>.</p>
+        <div class="row">
+          <button class="primary" id="verify">Verify route</button>
+          <button id="shortest">Find shortest valid route</button>
+        </div>
+        <div class="result" id="v-result"></div>
+      </section>
+
+      <section class="card panel" id="panel-trigger">
+        <h2>Vision trigger node</h2>
+        <p class="sub">Simulate the camera detecting an obstruction on corridor <span id="t-corridor"></span>.</p>
+        <div class="row"><button class="primary" id="trigger">Run mock trigger</button></div>
+        <div class="result" id="t-result"></div>
+        <div class="out mono" id="t-out"></div>
+        <div class="row" id="t-copy-row" hidden><button id="t-copy">Copy recovery prompt</button></div>
+        <details style="margin-top:10px"><summary>Live webcam mode (runs on your computer)</summary>
+          <p class="sub" style="margin-top:8px">The camera can't be driven from a web page. Run this in the project folder:</p>
+          <pre class="out mono">python -m vision.trigger_node --webcam --verbose</pre>
+          <p class="sub">Presentation mode for judges (needs the two images in <code>demo_assets/</code>): <code>python -m vision.trigger_node --visual-demo</code> shows the open corridor, then the blocked one, then reports the obstruction.</p>
+          <p class="sub">Step out of view until the overlay turns green, then put a person or object in the rectangle. Thresholds: people &gt; 35% of the region, or scene change &gt; 8%, for 3 readings in a row. Press C to recapture the empty corridor and Q to quit.</p>
+        </details>
+      </section>
+
+      <section class="card panel" id="panel-demo">
+        <h2>End-to-end demo</h2>
+        <p class="sub">Steps 1–5 of <code>demo_run.py</code>: reset, baseline route, obstruction, old route rejected, fallback found.</p>
+        <div class="row"><button class="primary" id="demo">Run demo (steps 1–5)</button></div>
+        <div class="result" id="d-result"></div>
+        <div class="out mono" id="d-out"></div>
+      </section>
+
+      <section class="card panel" id="panel-agent">
+        <h2>Claude recovery agent</h2>
+        <p class="sub">Claude Opus 5.5 reads the graph, gets a route approved by the verifier, and drafts the two notices. If no corridor is blocked yet, the mock trigger runs first.</p>
+        <p class="notice" id="agent-note"></p>
+        <div class="row" id="a-key-row">
+          <label for="a-key">Anthropic API key</label>
+          <input id="a-key" type="password" class="mono" size="28" placeholder="sk-ant-…" autocomplete="off" spellcheck="false">
+          <label><input type="checkbox" id="a-remember"> Remember on this device</label>
+        </div>
+        <div class="row">
+          <button class="primary" id="agent">Run recovery agent</button>
+          <button id="replay">Replay a recorded run (no key needed)</button>
+        </div>
+        <div class="result" id="a-result"></div>
+        <div class="out mono" id="a-out"></div>
+        <div id="fo-handoff" hidden>
+          <h3 style="margin:16px 0 4px;font-size:15px">Send with Fo in Claude Web</h3>
+          <p class="sub">Add who should get each notice, then paste the prompt into Claude Web with the Fo connector on. Put the channel first, as in the examples. Contacts only fill in the prompt on this screen: they aren't saved or sent anywhere.</p>
+          <div class="row">
+            <label for="a-fac">Facilities</label><input id="a-fac" size="26" placeholder="email facilities@example.com" autocomplete="off">
+            <label for="a-rec">Recipient</label><input id="a-rec" size="22" placeholder="text +15550000000" autocomplete="off">
+          </div>
+          <p class="sub" id="fo-env-note" hidden>Local server mode: leave both blank to use FACILITIES_CONTACT and RECIPIENT_CONTACT from .env.</p>
+          <div class="out mono" id="fo-prompt"></div>
+          <div class="row" style="margin-top:8px"><button class="primary" id="fo-copy">Copy prompt for Claude Web</button></div>
+        </div>
+      </section>
+
+      <section class="card panel live-only" id="panel-mcp">
+        <h2>MCP server <span class="pill">Local server only</span></h2>
+        <p class="sub">The MCP server is what Claude Web connects to, so it has to run as a real server, not inside this page. In Local server mode these buttons check that it answers and list its tools. Start it with <code>python mcp_server.py --http --allowed-host YOUR-DOMAIN</code>; the public check also needs ngrok running.</p>
+        <div class="row">
+          <button id="mcp-local">Check local (127.0.0.1:8000)</button>
+          <button id="mcp-public">Check public (ngrok)</button>
+        </div>
+        <div class="result" id="m-result"></div>
+        <p class="sub" style="margin-top:10px">To use it from Claude Web: Settings → Connectors → Add custom connector, with your ngrok URL ending in <code>/mcp</code>.</p>
+      </section>
+
+      <section class="card changelog" id="changelog">
+        <h2 style="margin:0 0 8px;font-size:17px">Changelog</h2>
+        <ul id="changes"></ul>
+      </section>
+    </div>
+  </div>
+</main>
+<footer class="wrap">FoGuard. This page is generated from <code>docs/features.json</code>. Browser mode runs entirely in this page; your API key, if you enter one, goes only to api.anthropic.com.</footer>
+
+<script src="data.js"></script>
+<script>
+"use strict";
+const DATA = window.FOGUARD;
+const $ = (id) => document.getElementById(id);
+const storage = {
+  get(k) { try { return localStorage.getItem(k); } catch { return null; } },
+  set(k, v) { try { localStorage.setItem(k, v); } catch { /* private mode */ } },
+};
+
+// ---------------------------------------------------------------- simulation
+// A JavaScript port of graph/verifier.py and graph/tools.py. Messages match the
+// Python ones word for word so both modes read the same.
+const sim = (() => {
+  const fac = DATA.facility;
+  let blocked = new Set();
+  const key = (a, b) => [a, b].sort().join("|");
+  const ids = new Set(fac.locations.map((l) => l.id));
+  const dist = new Map(fac.corridors.map((c) => [key(c.a, c.b), c.distance_m]));
+  const neighbours = (n) => fac.corridors.flatMap((c) =>
+    c.a === n ? [[c.b, c.distance_m, key(c.a, c.b)]] : c.b === n ? [[c.a, c.distance_m, key(c.a, c.b)]] : []);
+
+  function topology() {
+    const corridors = fac.corridors.map((c) => ({ between: [c.a, c.b].sort(), distance_m: c.distance_m,
+      is_blocked: blocked.has(key(c.a, c.b)) }));
+    return { locations: fac.locations.map((l) => ({ ...l, is_blocked: false })), corridors,
+      blocked_corridors: corridors.filter((c) => c.is_blocked).map((c) => c.between), blocked_locations: [] };
+  }
+  function verifyRoute(path) {
+    if (!Array.isArray(path) || !path.length) return { valid: false, reason: "Route must be a non-empty list of location IDs." };
+    for (const id of path) if (!ids.has(id)) return { valid: false, reason: `Unknown location: ${id}.` };
+    let total = 0;
+    for (let i = 0; i + 1 < path.length; i++) {
+      const [a, b] = [path[i], path[i + 1]];
+      const d = dist.get(key(a, b));
+      if (d === undefined || a === b) return { valid: false, reason: `Disallowed jump: No pathway connects ${a} -> ${b}.` };
+      if (blocked.has(key(a, b))) return { valid: false, reason: `Path blocked: Segment ${a} -> ${b} is currently impassable.` };
+      total += d;
+    }
+    return { valid: true, path: [...path], total_distance: Math.round(total * 1000) / 1000 };
+  }
+  function propose(origin, destination, path) {
+    if (!path.length || path[0] !== origin) return { approved: false, reason: `Route must start at the origin ${origin}.` };
+    if (path[path.length - 1] !== destination) return { approved: false, reason: `Route must end at the destination ${destination}.` };
+    const r = verifyRoute(path);
+    return r.valid ? { approved: true, route: r.path, total_distance_m: r.total_distance } : { approved: false, reason: r.reason };
+  }
+  function shortest(origin, destination) {
+    for (const id of [origin, destination]) if (!ids.has(id)) return { valid: false, reason: `Unknown location: ${id}.` };
+    // Dijkstra with (distance, id) ordering, like Python's heapq on tuples.
+    const best = new Map([[origin, 0]]); const prev = new Map(); const queue = [[0, origin]];
+    while (queue.length) {
+      queue.sort((x, y) => x[0] - y[0] || (x[1] < y[1] ? -1 : x[1] > y[1] ? 1 : 0));
+      const [d, n] = queue.shift();
+      if (n === destination) break;
+      if (d > best.get(n)) continue;
+      for (const [m, w, k] of neighbours(n)) {
+        if (blocked.has(k)) continue;
+        const c = d + w;
+        if (c < (best.get(m) ?? Infinity)) { best.set(m, c); prev.set(m, n); queue.push([c, m]); }
+      }
+    }
+    if (!best.has(destination)) return { valid: false, reason: `No passable route from ${origin} to ${destination}.` };
+    const path = [destination];
+    while (path[path.length - 1] !== origin) path.push(prev.get(path[path.length - 1]));
+    return verifyRoute(path.reverse());
+  }
+  return {
+    topology,
+    setBlocked(a, b, on) { const k = key(a, b); if (!dist.has(k)) return false; on ? blocked.add(k) : blocked.delete(k); return true; },
+    reset() { blocked = new Set(); },
+    propose, shortest,
+  };
+})();
+
+// ---------------------------------------------------------------- backend
+let mode = "sim";
+const apiBase = () => $("api-url").value.replace(/\/+$/, "");
+async function api(path, body) {
+  const res = await fetch(apiBase() + path, body === undefined ? {} :
+    { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) });
+  const data = await res.json().catch(() => ({}));
+  if (!res.ok) throw new Error(data.detail || `HTTP ${res.status}`);
+  return data;
+}
+const backend = {
+  topology: () => mode === "live" ? api("/api/topology") : Promise.resolve(sim.topology()),
+  setBlocked: (a, b, on) => mode === "live" ? api("/api/corridor", { a, b, blocked: on })
+    : (sim.setBlocked(a, b, on), Promise.resolve(sim.topology())),
+  reset: () => mode === "live" ? api("/api/reset", {}) : (sim.reset(), Promise.resolve(sim.topology())),
+  verify: (origin, destination, path) => mode === "live" ? api("/api/verify", { origin, destination, path })
+    : Promise.resolve(sim.propose(origin, destination, path)),
+  shortest: (origin, destination) => mode === "live" ? api("/api/shortest", { origin, destination, path: [] })
+    : Promise.resolve(sim.shortest(origin, destination)),
+};
+
+// ---------------------------------------------------------------- agent
+// The recovery agent from recovery_agent.py, run in the browser with the
+// visitor's own API key. Model, prompt and tool schemas come from data.js,
+// generated from the Python agent; the tools run against the in-page graph.
+const SDK_URL = "https://cdn.jsdelivr.net/npm/@anthropic-ai/sdk@0.131.0/+esm";
+const MAX_AGENT_TURNS = 12;
+
+function makeBrowserAgent(Anthropic, sim, DATA) {
+  return async function runAgent(apiKey, log) {
+    const client = new Anthropic({ apiKey, dangerouslyAllowBrowser: true });
+    const cfg = DATA.agent; const fac = DATA.facility;
+    let blocked = sim.topology().blocked_corridors;
+    if (!blocked.length) {
+      sim.setBlocked(...fac.monitored_corridor, true);
+      blocked = [fac.monitored_corridor];
+      log(`[trigger] No corridor was blocked; simulated an obstruction on ${fac.monitored_corridor.join(" <-> ")}`);
+    }
+    const incident = { event: "OBSTRUCTION_DETECTED", blocked_corridor: blocked[0], origin: fac.origin,
+      destination: fac.destination, timestamp: new Date().toISOString().replace(/\.\d+Z$/, "+00:00") };
+    const messages = [{ role: "user", content: `FoGuard incident report:\n${JSON.stringify(incident, null, 2)}` }];
+    const proposals = []; let approved = null;
+    const runTool = (name, input) => {
+      if (name === "get_workspace_topology") {
+        const t = sim.topology();
+        log(`  <- topology: blocked corridors ${JSON.stringify(t.blocked_corridors)}`);
+        return t;
+      }
+      if (name === "propose_recovery_route") {
+        const r = sim.propose(input.origin, input.destination, input.proposed_path || []);
+        proposals.push({ path: input.proposed_path, ...r });
+        if (r.approved) { approved = r; log(`  <- APPROVED ${r.route.join("-")} (${r.total_distance_m} m)`); }
+        else log(`  <- REJECTED ${(input.proposed_path || []).join("-")}: ${r.reason}`);
+        return r;
+      }
+      return { error: `Unknown tool ${name}` };
+    };
+    log(`[agent] ${cfg.model} handling the incident in your browser (notices will be drafts)`);
+    for (let turn = 0; turn < MAX_AGENT_TURNS; turn++) {
+      const res = await client.beta.messages.create({
+        model: cfg.model, max_tokens: 16000, system: cfg.system, tools: cfg.tools, messages,
+        output_config: { effort: "medium" },
+        betas: ["server-side-fallback-2026-07-01"], fallbacks: "default",
+      });
+      if (res.stop_reason === "refusal") throw new Error("Claude declined the request.");
+      messages.push({ role: "assistant", content: res.content });
+      const uses = res.content.filter((b) => b.type === "tool_use");
+      if (res.stop_reason !== "tool_use" || !uses.length) {
+        const final_text = res.content.filter((b) => b.type === "text").map((b) => b.text).join("\n").trim();
+        return { incident, approved_route: approved, proposals, final_text };
+      }
+      // Answer every tool call from this turn in one message.
+      messages.push({ role: "user", content: uses.map((u) => {
+        log(`  -> ${u.name}(${u.input && Object.keys(u.input).length ? JSON.stringify(u.input) : ""})`);
+        return { type: "tool_result", tool_use_id: u.id, content: JSON.stringify(runTool(u.name, u.input || {})) };
+      }) });
+    }
+    throw new Error(`The agent didn't finish within ${MAX_AGENT_TURNS} turns.`);
+  };
+}
+
+// ---------------------------------------------------------------- rendering
+const POS = { A: [60, 150], B: [220, 60], C: [400, 60], F: [560, 150], D: [220, 240], E: [400, 240] };
+let lastTopology = null; let routeShown = [];
+
+function setResult(el, ok, text) { el.className = "result " + (ok ? "ok" : "bad"); el.textContent = text; }
+function clearOut(...els) { els.forEach((e) => { e.textContent = ""; e.className = e.className.replace(/ (ok|bad)/, ""); }); }
+
+function drawMap(topo) {
+  lastTopology = topo;
+  const svg = $("map"); svg.textContent = "";
+  const ns = "http://www.w3.org/2000/svg";
+  const el = (tag, attrs, text) => { const e = document.createElementNS(ns, tag);
+    for (const [k, v] of Object.entries(attrs)) e.setAttribute(k, v); if (text != null) e.textContent = text; return e; };
+  const onRoute = new Set(); for (let i = 0; i + 1 < routeShown.length; i++) onRoute.add([routeShown[i], routeShown[i + 1]].sort().join("|"));
+  for (const c of topo.corridors) {
+    const [a, b] = c.between; const [x1, y1] = POS[a] || [0, 0]; const [x2, y2] = POS[b] || [0, 0];
+    const cls = "edge" + (c.is_blocked ? " blocked" : "") + (onRoute.has(a + "|" + b) ? " route" : "");
+    const g = el("g", { tabindex: 0, role: "button",
+      "aria-label": `Corridor ${a} to ${b}, ${c.distance_m} metres, ${c.is_blocked ? "blocked" : "open"}. Activate to toggle.` });
+    g.append(el("line", { x1, y1, x2, y2, class: cls }), el("line", { x1, y1, x2, y2, class: "hit" }));
+    g.append(el("text", { x: (x1 + x2) / 2 + 6, y: (y1 + y2) / 2 - 6, class: "dist" }, `${c.distance_m} m`));
+    const toggle = () => run($("graph-result"), async () => {
+      drawMap(await backend.setBlocked(a, b, !c.is_blocked));
+      return [true, `Corridor ${a} ↔ ${b} ${c.is_blocked ? "cleared" : "blocked"} (both directions).`];
+    });
+    g.addEventListener("click", toggle);
+    g.addEventListener("keydown", (e) => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); toggle(); } });
+    svg.append(g);
+  }
+  for (const l of topo.locations) {
+    const [x, y] = POS[l.id] || [0, 0];
+    const g = el("g", { class: "node" + (routeShown.includes(l.id) ? " on-route" : "") });
+    g.append(el("circle", { cx: x, cy: y, r: 20 }), el("text", { x, y: y + 5, "text-anchor": "middle" }, l.id),
+      el("text", { x, y: y + (y > 150 ? 38 : -28), "text-anchor": "middle", class: "name" }, l.name));
+    svg.append(g);
+  }
+}
+
+async function run(resultEl, fn) {
+  try { const r = await fn(); if (r) setResult(resultEl, r[0], r[1]); }
+  catch (e) { setResult(resultEl, false, liveError(e)); }
+}
+function liveError(e) {
+  return mode === "live" && e instanceof TypeError
+    ? `Couldn't reach the local server at ${apiBase()}. Is python api_server.py running? (${e.message})` : e.message;
+}
+const refresh = () => run($("graph-result"), async () => { drawMap(await backend.topology()); });
+
+function renderFeatures() {
+  $("updated").textContent = `features updated ${DATA.last_updated}`;
+  const box = $("features");
+  for (const f of DATA.features) {
+    const card = document.createElement("article"); card.className = "card feature";
+    const h = document.createElement("h3"); h.textContent = f.title;
+    const p = document.createElement("p"); p.textContent = f.summary;
+    const det = document.createElement("details"); const sum = document.createElement("summary"); sum.textContent = "How it works";
+    const ul = document.createElement("ul"); f.how_it_works.forEach((t) => { const li = document.createElement("li"); li.textContent = t; ul.append(li); });
+    const files = document.createElement("p"); files.style.marginTop = "6px"; files.textContent = "Files: " + f.files.join(", ");
+    const cmd = document.createElement("p"); cmd.innerHTML = "Run: "; const code = document.createElement("code"); code.textContent = f.run; cmd.append(code);
+    det.append(sum, ul, files, cmd);
+    const meta = document.createElement("div"); meta.className = "meta";
+    for (const m of f.modes) { const s = document.createElement("span"); s.className = "pill"; s.textContent = m; meta.append(s); }
+    if (f.panel) { const a = document.createElement("a"); a.href = "#panel-" + f.panel; a.textContent = "Try it →"; a.style.fontSize = "13px"; meta.append(a); }
+    card.append(h, p, det, meta); box.append(card);
+  }
+  const ul = $("changes");
+  for (const c of DATA.changelog) { const li = document.createElement("li"); li.textContent = `${c.date}: ${c.text}`; ul.append(li); }
+}
+
+// ---------------------------------------------------------------- modes
+async function setMode(next) {
+  mode = next; storage.set("foguard-mode", next);
+  $("mode-sim").setAttribute("aria-pressed", next === "sim"); $("mode-live").setAttribute("aria-pressed", next === "live");
+  const conn = $("conn");
+  document.querySelectorAll(".live-only").forEach((p) => p.dataset.disabled = String(next !== "live"));
+  for (const id of ["mcp-local", "mcp-public"]) $(id).disabled = next !== "live";
+  $("api-url").hidden = next !== "live";
+  $("a-key-row").hidden = next === "live"; $("fo-env-note").hidden = next !== "live"; $("fo-handoff").hidden = true;
+  routeShown = [];
+  if (next === "sim") {
+    conn.className = "pill ok"; conn.innerHTML = '<span class="dot"></span>runs in this page';
+    $("mode-note").textContent = "Browser mode: everything runs right here, with no server. The graph and route verifier are a JavaScript copy of the Python code, checked against it in 2,560 cases. The Claude agent calls the Claude API directly with your own key.";
+    $("agent-note").textContent = "Your key is sent only to api.anthropic.com from this browser. It isn't stored unless you tick Remember, and then only in this browser. Each run spends a little API credit. No key? Replay a real recorded run.";
+    return refresh();
+  }
+  conn.className = "pill warn"; conn.innerHTML = '<span class="dot"></span>connecting…';
+  $("mode-note").textContent = `Local server mode: buttons call the real Python code through ${apiBase()}. Start it with: python api_server.py`;
+  try {
+    const s = await api("/api/status");
+    conn.className = "pill ok"; conn.innerHTML = '<span class="dot"></span>live';
+    $("mode-note").textContent = `Local server mode: buttons run the real Python code and Kùzu database through ${apiBase()}.`;
+    $("agent-note").textContent = s.anthropic_key_set
+      ? `Uses ${s.model} through your local server's key. Each run spends a little Anthropic API credit. The notices are drafted here and sent by Fo in Claude Web.`
+      : "ANTHROPIC_API_KEY isn't set in .env, so the agent can't run.";
+    if (s.cloud_sync_folder) $("mode-note").textContent += ` Warning: the database is inside ${s.cloud_sync_folder}.`;
+    await refresh();
+  } catch (e) {
+    conn.className = "pill bad"; conn.innerHTML = '<span class="dot"></span>offline';
+    $("mode-note").textContent = `Local server mode can't reach ${apiBase()}. Start it with: python api_server.py, or switch back to Browser mode, which needs no server.` +
+      (location.protocol === "https:" ? " and set DASHBOARD_ORIGIN to this site's address (see README). Your browser may also ask to allow access to devices on your local network." : "");
+    setResult($("graph-result"), false, liveError(e));
+  }
+}
+
+// ---------------------------------------------------------------- wiring
+function init() {
+  renderFeatures();
+  const opts = DATA.facility.locations.map((l) => `<option value="${l.id}">${l.id} · ${l.name}</option>`).join("");
+  $("v-origin").innerHTML = opts; $("v-dest").innerHTML = opts;
+  $("v-origin").value = DATA.facility.origin; $("v-dest").value = DATA.facility.destination;
+  $("t-corridor").textContent = DATA.facility.monitored_corridor.join(" ↔ ");
+
+  $("mode-sim").onclick = () => setMode("sim");
+  $("mode-live").onclick = () => setMode("live");
+  $("api-url").onchange = () => { storage.set("foguard-api", $("api-url").value); if (mode === "live") setMode("live"); };
+  $("theme").onclick = () => {
+    const dark = document.documentElement.dataset.theme
+      ? document.documentElement.dataset.theme === "dark" : matchMedia("(prefers-color-scheme: dark)").matches;
+    document.documentElement.dataset.theme = dark ? "light" : "dark"; storage.set("foguard-theme", dark ? "light" : "dark");
+  };
+  $("reset").onclick = () => run($("graph-result"), async () => { routeShown = []; drawMap(await backend.reset()); return [true, "Graph reset: every corridor open."]; });
+  $("refresh").onclick = refresh;
+
+  const readPath = () => $("v-path").value.split(/[\s,>-]+/).map((s) => s.trim().toUpperCase()).filter(Boolean);
+  $("verify").onclick = () => run($("v-result"), async () => {
+    const path = readPath(); const r = await backend.verify($("v-origin").value, $("v-dest").value, path);
+    routeShown = r.approved ? r.route : []; drawMap(await backend.topology());
+    return r.approved ? [true, `Approved: ${r.route.join(" → ")} (${r.total_distance_m} m)`] : [false, `Rejected: ${r.reason}`];
+  });
+  $("shortest").onclick = () => run($("v-result"), async () => {
+    const r = await backend.shortest($("v-origin").value, $("v-dest").value);
+    routeShown = r.valid ? r.path : []; if (r.valid) $("v-path").value = r.path.join(","); drawMap(await backend.topology());
+    return r.valid ? [true, `Shortest valid route: ${r.path.join(" → ")} (${r.total_distance} m), verified hop by hop`] : [false, r.reason];
+  });
+
+  let lastPrompt = "";
+  $("trigger").onclick = () => run($("t-result"), async () => {
+    clearOut($("t-out"));
+    let out;
+    if (mode === "live") out = await api("/api/trigger/mock", {});
+    else {
+      const [a, b] = DATA.facility.monitored_corridor; sim.setBlocked(a, b, true);
+      const incident = { event: "OBSTRUCTION_DETECTED", blocked_corridor: [a, b], origin: DATA.facility.origin,
+        destination: DATA.facility.destination, timestamp: new Date().toISOString().replace(/\.\d+Z$/, "+00:00") };
+      out = { incident, reroute: sim.shortest(incident.origin, incident.destination), prompt: null };
+    }
+    routeShown = out.reroute.valid ? out.reroute.path : []; drawMap(await backend.topology());
+    $("t-out").textContent = JSON.stringify(out.incident, null, 2) + (out.prompt ? "\n\n--- recovery prompt for Claude Web ---\n" + out.prompt : "");
+    lastPrompt = out.prompt || ""; $("t-copy-row").hidden = !lastPrompt;
+    const [a, b] = out.incident.blocked_corridor;
+    return [true, `Obstruction on ${a} ↔ ${b}: corridor blocked in the graph. Reroute: ` +
+      (out.reroute.valid ? `${out.reroute.path.join(" → ")} (${out.reroute.total_distance} m)` : out.reroute.reason)];
+  });
+  $("t-copy").onclick = async () => { try { await navigator.clipboard.writeText(lastPrompt); $("t-copy").textContent = "Copied"; } catch { $("t-copy").textContent = "Copy failed"; } };
+
+  $("demo").onclick = () => run($("d-result"), async () => {
+    $("d-out").textContent = "Running…";
+    if (mode === "live") {
+      const r = await api("/api/demo", {}); $("d-out").textContent = r.output; await refresh();
+      return [r.exit_code === 0, r.exit_code === 0 ? "Demo passed: all steps matched." : `Demo failed (exit ${r.exit_code}).`];
+    }
+    const log = []; const step = (n, t) => log.push(`\n--- Step ${n}: ${t} ---`);
+    const { origin: o, destination: d, monitored_corridor: [a, b] } = DATA.facility;
+    step(1, "Reset the facility graph"); sim.reset(); log.push("[demo] graph seeded (in-browser)");
+    step(2, "Baseline optimal route"); const base = sim.shortest(o, d);
+    log.push(`[demo] Optimal ${o} -> ${d}: ${base.path.join(" -> ")} (${base.total_distance} m)`);
+    step(3, "Vision trigger reports an obstruction"); sim.setBlocked(a, b, true); log.push(`[trigger] corridor ${a} <-> ${b} blocked`);
+    step(4, "Verifier rejects the old baseline route"); const rej = sim.propose(o, d, base.path);
+    log.push(`[demo] ${base.path.join(" -> ")} ${rej.approved ? "APPROVED (unexpected!)" : "REJECTED: " + rej.reason}`);
+    step(5, "Shortest valid fallback route"); const fb = sim.shortest(o, d);
+    log.push(`[demo] Fallback ${o} -> ${d}: ${fb.path.join(" -> ")} (${fb.total_distance} m)`);
+    log.push("\n[demo] Step 6 (Claude agent) runs only in Live mode.");
+    $("d-out").textContent = log.join("\n").trim(); routeShown = fb.path; drawMap(sim.topology());
+    const ok = base.path.join("") === "ABCF" && !rej.approved && fb.path.join("") === "ADEF";
+    return [ok, ok ? "Demo passed: baseline A→B→C→F, rejected after the block, fallback A→D→E→F." : "Demo result differs from the expected routes."];
+  });
+
+  // Fo handoff: fill FO_PROMPT_TEMPLATE from recovery_agent.py (via data.js)
+  // with the run's result and the contacts typed here.
+  let handoff = null;
+  const buildFoPrompt = (incident, outcome, fac, rec) => {
+    const r = outcome.approved_route; const np = DATA.agent.not_provided;
+    const vals = { timestamp: incident.timestamp, corridor: incident.blocked_corridor.join(" <-> "),
+      route: r.route.join(" -> "), distance: String(r.total_distance_m), origin: incident.origin,
+      destination: incident.destination, facilities: fac || np, recipient: rec || np, notices: outcome.final_text };
+    return DATA.agent.fo_prompt_template.replace(/\{(\w+)\}/g, (m, k) => (k in vals ? vals[k] : m));
+  };
+  const renderHandoff = () => {
+    if (!handoff) return;
+    const fac = $("a-fac").value.trim(), rec = $("a-rec").value.trim();
+    // Local server with both boxes blank: use the server's prompt (contacts from .env).
+    $("fo-prompt").textContent = handoff.serverPrompt && !fac && !rec
+      ? handoff.serverPrompt : buildFoPrompt(handoff.incident, handoff.outcome, fac, rec);
+  };
+  function showHandoff(incident, outcome, serverPrompt = null) {
+    if (!outcome.approved_route) { $("fo-handoff").hidden = true; handoff = null; return; }
+    handoff = { incident, outcome, serverPrompt }; $("fo-handoff").hidden = false; renderHandoff();
+  }
+  $("a-fac").oninput = renderHandoff; $("a-rec").oninput = renderHandoff;
+  $("fo-copy").onclick = async () => {
+    try { await navigator.clipboard.writeText($("fo-prompt").textContent); $("fo-copy").textContent = "Copied: now paste it into Claude Web"; }
+    catch { $("fo-copy").textContent = "Copy failed: select the text and copy it"; }
+    setTimeout(() => { $("fo-copy").textContent = "Copy prompt for Claude Web"; }, 4000);
+  };
+
+  const agentSummary = (r) => r.approved_route
+    ? [true, `Verifier-approved route: ${r.approved_route.route.join(" → ")} (${r.approved_route.total_distance_m} m) after ${r.proposals.length} proposal(s)`]
+    : [false, "Claude finished without an approved route."];
+  $("agent").onclick = () => run($("a-result"), async () => {
+    clearOut($("a-result"));
+    const local = mode === "live";
+    const key = $("a-key").value.trim();
+    if (!local && !key) return [false, "Paste an Anthropic API key first, or use Replay a recorded run."];
+    if (!confirm("Run the Claude recovery agent? This spends a little Anthropic API credit.")) return null;
+    if (!local) $("a-remember").checked ? storage.set("foguard-key", key) : storage.set("foguard-key", "");
+    $("agent").disabled = true; $("a-out").textContent = "Claude is working (usually 20–90 seconds)…\n";
+    try {
+      if (local) {
+        const r = await api("/api/agent", { facilities_contact: $("a-fac").value.trim(), recipient_contact: $("a-rec").value.trim() });
+        $("a-out").textContent = r.log + "\n" + r.final_text;
+        routeShown = r.approved_route ? r.approved_route.route : []; await refresh();
+        showHandoff(r.incident, r, r.fo_prompt);
+        return agentSummary(r);
+      }
+      let Anthropic;
+      try { ({ default: Anthropic } = await import(SDK_URL)); }
+      catch (e) { throw new Error(`Couldn't load the Anthropic SDK from the CDN: ${e.message}`); }
+      const lines = [];
+      const log = (line) => { lines.push(line); $("a-out").textContent = lines.join("\n"); };
+      let r;
+      try { r = await makeBrowserAgent(Anthropic, sim, DATA)(key, log); }
+      catch (e) {
+        const status = e.status ? ` (HTTP ${e.status})` : "";
+        throw new Error(e.status === 401 ? "The Anthropic API rejected that key." : `Claude API error${status}: ${e.message}`);
+      }
+      $("a-out").textContent = lines.join("\n") + "\n\n" + r.final_text;
+      routeShown = r.approved_route ? r.approved_route.route : []; drawMap(sim.topology());
+      showHandoff(r.incident, r);
+      return agentSummary(r);
+    } finally { $("agent").disabled = false; }
+  });
+
+  $("replay").onclick = () => run($("a-result"), async () => {
+    const rec = DATA.recorded_run;
+    if (!rec) return [false, "No recorded run is bundled with this page."];
+    clearOut($("a-result")); $("replay").disabled = true;
+    try {
+      const head = `Recorded run, ${rec.model}, ${rec.recorded_at} (a real run, replayed; no API call is made)\n`;
+      const lines = [head];
+      for (const line of rec.log) { lines.push(line); $("a-out").textContent = lines.join("\n"); await new Promise((ok) => setTimeout(ok, 650)); }
+      $("a-out").textContent = lines.join("\n") + "\n\n" + rec.final_text;
+      if (mode === "sim") { sim.setBlocked(...rec.incident.blocked_corridor, true); }
+      routeShown = rec.approved_route ? rec.approved_route.route : []; drawMap(await backend.topology());
+      showHandoff(rec.incident, rec);
+      return agentSummary(rec);
+    } finally { $("replay").disabled = false; }
+  });
+
+  const mcpCheck = (target) => run($("m-result"), async () => {
+    $("m-result").className = "result"; $("m-result").textContent = "Checking…";
+    const r = await api(`/api/mcp?target=${target}`);
+    return r.reachable ? [true, `Reachable at ${r.url}. Tools: ${r.tools.join(", ")}`] : [false, `Not reachable at ${r.url}: ${r.error}`];
+  });
+  $("mcp-local").onclick = () => mcpCheck("local");
+  $("mcp-public").onclick = () => mcpCheck("public");
+
+  const savedTheme = storage.get("foguard-theme"); if (savedTheme) document.documentElement.dataset.theme = savedTheme;
+  const savedKey = storage.get("foguard-key"); if (savedKey) { $("a-key").value = savedKey; $("a-remember").checked = true; }
+  const savedApi = storage.get("foguard-api"); if (savedApi) $("api-url").value = savedApi;
+  // Served by api_server.py itself: talk to the same origin and start in Live mode.
+  const servedByApi = /^https?:\/\/(127\.0\.0\.1|localhost):8001$/.test(location.origin);
+  if (servedByApi) $("api-url").value = location.origin;
+  setMode(servedByApi ? "live" : (storage.get("foguard-mode") === "live" ? "live" : "sim"));
+}
+init();
+</script>
+</body>
+</html>

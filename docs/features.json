@@ -1,0 +1,186 @@
+{
+  "last_updated": "2026-10-18",
+  "features": [
+    {
+      "id": "graph",
+      "title": "Facility graph",
+      "summary": "A small map of the facility stored in a Kùzu graph database: six waypoints (A–F) joined by eight two-way corridors, each with a length in metres.",
+      "how_it_works": [
+        "Waypoints are nodes and corridors are edges. Every corridor is stored as a pair of edges, one in each direction, because people and robots can walk either way.",
+        "Blocking a corridor marks both directions impassable in one update, so a route can't sneak through it backwards.",
+        "The database is a single file at data/kuzu_db. It is rebuilt automatically if it is missing or corrupt, and the code refuses to run it from a OneDrive or Dropbox folder, because sync clients corrupt it."
+      ],
+      "files": [
+        "graph/init_db.py",
+        "graph/tools.py"
+      ],
+      "run": "python -m graph.init_db",
+      "panel": "graph",
+      "modes": [
+        "browser",
+        "local server"
+      ]
+    },
+    {
+      "id": "verifier",
+      "title": "Route verifier guardrail",
+      "summary": "Checks any proposed route hop by hop against the live graph, so an AI agent (or a person) can't approve a path that skips a corridor or crosses a blocked one.",
+      "how_it_works": [
+        "Each consecutive pair of waypoints must be joined by a real, unblocked corridor. The first failure is returned as a plain reason, such as 'Disallowed jump: No pathway connects A -> C.'",
+        "The route must also start at the stated origin and end at the stated destination.",
+        "The shortest-route search (Dijkstra by distance) runs its own answer back through the same verifier before returning it."
+      ],
+      "files": [
+        "graph/verifier.py",
+        "graph/tools.py"
+      ],
+      "run": "python -m graph.verifier",
+      "panel": "verifier",
+      "modes": [
+        "browser",
+        "local server"
+      ]
+    },
+    {
+      "id": "trigger",
+      "title": "Vision trigger node",
+      "summary": "Watches corridor B ↔ C. When it sees an obstruction it blocks the corridor in the graph, emits a JSON incident, and prints a recovery prompt for Claude.",
+      "how_it_works": [
+        "--mock simulates an obstruction instantly, with no camera or GPU.",
+        "--visual-demo is the presentation mode for judges: it shows a simulated camera feed of the open corridor for 3 seconds, swaps to the blocked corridor (boxes fallen) for 2 seconds, then blocks the corridor in the graph and prints the incident. The images live in demo_assets/; they're displayed, not analyzed.",
+        "--webcam runs the DepthAR segmentor on a live camera. It counts as obstructed when people cover more than 35% of the corridor region, or when more than 8% of the region differs from a captured picture of the empty corridor (for boxes and carts).",
+        "It only arms after capturing the empty corridor, waits for nobody to be in view before capturing, and needs 3 obstructed readings in a row before raising an incident.",
+        "Depth isn't used for the decision: Depth Anything's depth is rescaled every frame, and in testing it went the wrong way when the corridor was blocked."
+      ],
+      "files": [
+        "vision/trigger_node.py",
+        "core/segmentor.py",
+        "demo_assets/"
+      ],
+      "run": "python -m vision.trigger_node --mock",
+      "panel": "trigger",
+      "modes": [
+        "browser",
+        "local server"
+      ]
+    },
+    {
+      "id": "mcp",
+      "title": "MCP server",
+      "summary": "Exposes the graph to AI agents such as Claude Web through two tools: get_workspace_topology and propose_recovery_route.",
+      "how_it_works": [
+        "Runs over stdio for Claude Desktop/Code, or over HTTP at /mcp for remote connectors (published through ngrok).",
+        "Only reads the graph: an agent can look and get routes checked, but can't change anything.",
+        "Opens the database only for each call, so the trigger node and demo can update the graph while it runs."
+      ],
+      "files": [
+        "mcp_server.py",
+        "graph/tools.py"
+      ],
+      "run": "python mcp_server.py --http --allowed-host YOUR-DOMAIN.ngrok-free.dev",
+      "panel": "mcp",
+      "modes": [
+        "local server"
+      ]
+    },
+    {
+      "id": "agent",
+      "title": "Claude recovery agent",
+      "summary": "Claude Opus 5.5 reads the graph, finds the shortest open route, gets it approved by the verifier, and drafts the two recovery notices. You then paste a ready-made prompt into Claude Web, where Fo sends them.",
+      "how_it_works": [
+        "Claude gets two tools: one to read the graph and one to propose a route. It must get a route approved before it may state one.",
+        "The approved route is taken from the verifier's own result, not from Claude's text.",
+        "In this page it calls the Claude API directly with the key you paste in; the key goes only to api.anthropic.com. The same model, prompt and tool definitions are generated from recovery_agent.py.",
+        "After a run, 'Send with Fo in Claude Web' builds a prompt with the approved route, both drafts and the contacts you type. Paste it into Claude Web with the Fo connector on and Fo sends the notices. Contacts aren't saved or sent anywhere by this page.",
+        "No key? 'Replay a recorded run' plays back a real run captured with scripts/record_agent_run.py, and you can still build the Fo prompt from it."
+      ],
+      "files": [
+        "recovery_agent.py",
+        "docs/index.html",
+        "scripts/record_agent_run.py"
+      ],
+      "run": "python recovery_agent.py",
+      "panel": "agent",
+      "modes": [
+        "browser",
+        "local server"
+      ]
+    },
+    {
+      "id": "demo",
+      "title": "End-to-end demo",
+      "summary": "One command that resets the graph, shows the normal route, triggers the obstruction, proves the old route is rejected, finds the fallback, and (with an API key) runs the recovery agent.",
+      "how_it_works": [
+        "Step 3 plays the trigger's visual demo when the demo_assets/ images are present, and falls back to the plain mock trigger otherwise (or with --no-visual).",
+        "Expected results are asserted at every step, so the demo fails loudly if anything changes.",
+        "It leaves corridor B ↔ C blocked afterwards, so the MCP server shows the incident to Claude."
+      ],
+      "files": [
+        "demo_run.py"
+      ],
+      "run": "python demo_run.py",
+      "panel": "demo",
+      "modes": [
+        "browser",
+        "local server"
+      ]
+    },
+    {
+      "id": "dashboard",
+      "title": "This dashboard",
+      "summary": "Lists every feature and lets you try each one. Everything runs in the page itself, so the GitHub Pages site works on its own with no server.",
+      "how_it_works": [
+        "Browser mode (the default) runs the graph, verifier and mock trigger as JavaScript, generated from the Python seed data and checked against the Python verifier in 2,560 cases.",
+        "The Claude agent runs in the page too, with your own API key, or as a replay of a recorded real run.",
+        "Local server mode is optional: it drives the real Python code and Kùzu database through api_server.py, and is the only way to check the MCP server.",
+        "Feature descriptions live in docs/features.json and are rebuilt into docs/data.js by scripts/build_dashboard.py."
+      ],
+      "files": [
+        "docs/index.html",
+        "docs/features.json",
+        "api_server.py",
+        "scripts/build_dashboard.py"
+      ],
+      "run": "python api_server.py",
+      "panel": null,
+      "modes": [
+        "browser",
+        "local server"
+      ]
+    }
+  ],
+  "changelog": [
+    {
+      "date": "2026-10-18",
+      "text": "Presentation mode: the trigger node and demo can show a simulated camera feed of the corridor going from open to blocked."
+    },
+    {
+      "date": "2026-10-18",
+      "text": "Fo now sends the notices from Claude Web: runs end with a paste-ready prompt, and the agent no longer connects to Fo directly."
+    },
+    {
+      "date": "2026-10-18",
+      "text": "The dashboard now works fully on GitHub Pages: the Claude agent runs in the browser with your own key, plus a replay of a recorded run."
+    },
+    {
+      "date": "2026-10-18",
+      "text": "Added this dashboard, the local API server, and the GitHub Pages setup."
+    },
+    {
+      "date": "2026-10-17",
+      "text": "Claude API recovery agent added to the demo, with optional Fo attachment."
+    },
+    {
+      "date": "2026-10-17",
+      "text": "MCP server published through ngrok and tested end to end from Claude Web."
+    },
+    {
+      "date": "2026-10-17",
+      "text": "Webcam trigger switched to person coverage plus scene change, with safe calibration."
+    },
+    {
+      "date": "2026-10-17",
+      "text": "Corridors made two-way; blocking now closes both directions."
+    }
+  ]
+}

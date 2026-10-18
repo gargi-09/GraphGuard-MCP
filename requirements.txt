@@ -1,0 +1,27 @@
+# core vision
+torch>=2.2.0
+torchvision>=0.17.0
+opencv-python>=4.9.0
+numpy>=1.26.0
+Pillow>=10.2.0
+
+# depth estimation
+transformers>=4.40.0
+huggingface-hub>=0.22.0
+
+# segmentation
+timm>=0.9.16
+
+# api + deployment
+fastapi>=0.111.0
+uvicorn[standard]>=0.29.0
+python-multipart>=0.0.9
+
+# utilities
+python-dotenv>=1.0.0
+tqdm>=4.66.0
+
+# graph + agent tooling
+kuzu
+mcp
+anthropic
