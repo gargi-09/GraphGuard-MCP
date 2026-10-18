@@ -48,7 +48,7 @@
       "how_it_works": [
         "--mock simulates an obstruction instantly, with no camera or GPU.",
         "--visual-demo is the presentation mode for judges: it shows a simulated camera feed of the open corridor for 3 seconds, swaps to the blocked corridor (boxes fallen) for 2 seconds, then blocks the corridor in the graph and prints the incident. The images live in demo_assets/; they're displayed, not analyzed.",
-        "On the dashboard, the Edge Vision Node Feed shows the camera view of corridor B ↔ C. 'Trigger Anomaly' simulates boxes falling: the image switches to the blocked aisle, the corridor is blocked in the graph, the route is recalculated, and the Claude Web prompt is generated. The image always follows the graph's state for that corridor.",
+        "On the dashboard, the Edge Vision Node Feed shows the camera view of corridor B ↔ C. 'Trigger Anomaly' simulates boxes falling: the image switches to the blocked aisle, the corridor is blocked in the graph (the real one, in Live edge mode), the route is recalculated, and the Claude Web prompt appears in a copy box. The image always follows the graph's state for that corridor.",
         "--webcam runs the DepthAR segmentor on a live camera. It counts as obstructed when people cover more than 35% of the corridor region, or when more than 8% of the region differs from a captured picture of the empty corridor (for boxes and carts).",
         "It only arms after capturing the empty corridor, waits for nobody to be in view before capturing, and needs 3 obstructed readings in a row before raising an incident.",
         "Depth isn't used for the decision: Depth Anything's depth is rescaled every frame, and in testing it went the wrong way when the corridor was blocked."
@@ -66,6 +66,53 @@
       ]
     },
     {
+      "id": "diagnostics",
+      "title": "Routing diagnostics (5/5)",
+      "summary": "Five fixed routing scenarios that prove the guardrail is deterministic: the same blocked corridors always give the same verified route, or a clear 'no route'.",
+      "how_it_works": [
+        "tests/test_routing.py is the single source of truth: the terminal, the MCP server's GET /run_diagnostics, the local API and this dashboard all run the same scenarios.",
+        "Scenarios: classic reroute (A-D-E-F, 38 m), cross-link (A-B-D-E-F, 39 m), short trip (B-D-E, 20 m), impossible route (no route to F), clear path (D-B-C, 18 m).",
+        "Each run builds a freshly seeded graph in a throwaway database, so results are deterministic and the live graph is never touched, even when the endpoint is called publicly.",
+        "Besides the route, each scenario checks that every blocked corridor is really rejected by the verifier.",
+        "On the dashboard, 'Run 5/5 Diagnostics' fetches /run_diagnostics from the edge server; if it's unreachable you can run the same scenarios in the page instead."
+      ],
+      "files": [
+        "tests/test_routing.py",
+        "mcp_server.py"
+      ],
+      "run": "python tests/test_routing.py",
+      "panel": "diag",
+      "modes": [
+        "browser",
+        "live edge (MCP)",
+        "local server"
+      ]
+    },
+    {
+      "id": "scenarios",
+      "title": "Scenario runs: full pipeline",
+      "summary": "Each routing scenario run end to end with its reasoning shown: incident, the verifier checking every route on the map, Claude's reasoning and tool calls, and the prompt Fo sends.",
+      "how_it_works": [
+        "scenario_pipeline.py takes the scenarios from tests/test_routing.py and, for each, blocks its corridors on the live graph (a dashboard in Live edge mode follows along).",
+        "The verifier's reasoning is shown in full: every route that physically exists, each run through the same guardrail, with its distance or exact rejection reason.",
+        "Claude then handles the incident with summarized reasoning switched on, so you see why it proposes what it does, and how it reacts to rejections.",
+        "The Fo prompt is built per scenario: a reroute, or a hold-and-escalate message when no route exists. A scenario with nothing blocked raises no incident at all.",
+        "Runs are saved to docs/scenario_runs.json (without contacts) so this page can replay them; with your own API key you can run any scenario live here."
+      ],
+      "files": [
+        "scenario_pipeline.py",
+        "graph/tools.py",
+        "recovery_agent.py",
+        "docs/scenario_runs.json"
+      ],
+      "run": "python scenario_pipeline.py",
+      "panel": "scen",
+      "modes": [
+        "browser",
+        "local server"
+      ]
+    },
+    {
       "id": "mcp",
       "title": "MCP server",
       "summary": "Exposes the graph to AI agents such as Claude Web through two tools: get_workspace_topology and propose_recovery_route. This dashboard also talks to it directly, so the public site can follow the real graph on the edge laptop.",
@@ -73,6 +120,7 @@
         "Runs over stdio for Claude Desktop/Code, or over HTTP at /mcp for remote connectors (published through ngrok).",
         "Only reads the graph: an agent can look and get routes checked, but can't change anything.",
         "Answers browser requests (CORS) from the GitHub Pages site and localhost, so 'Check public' and Live edge mode call it straight from the page. Every request sends ngrok-skip-browser-warning so ngrok's free tier doesn't return its warning page.",
+        "Also serves three plain HTTP routes for the dashboard: GET /run_diagnostics (the routing suite), and POST /trigger_anomaly and /clear_anomaly, the only changes possible over the public URL (block or clear the monitored corridor).",
         "Live edge mode re-reads the graph every 3 seconds: run the trigger on the edge laptop and the map, route and camera feed here update within a few seconds.",
         "Opens the database only for each call, so the trigger node and demo can update the graph while it runs."
       ],
@@ -94,6 +142,7 @@
       "summary": "Claude Opus 5.5 reads the graph, finds the shortest open route, gets it approved by the verifier, and drafts the two recovery notices. You then paste a ready-made prompt into Claude Web, where Fo sends them.",
       "how_it_works": [
         "Claude gets two tools: one to read the graph and one to propose a route. It must get a route approved before it may state one.",
+        "Claude's reasoning is returned as readable summaries (summarized thinking), shown alongside its tool calls, so you can see how it chose a route. If no route exists it says so and escalates instead of inventing one.",
         "The approved route is taken from the verifier's own result, not from Claude's text.",
         "In this page it calls the Claude API directly with the key you paste in; the key goes only to api.anthropic.com. The same model, prompt and tool definitions are generated from recovery_agent.py.",
         "After a run, 'Send with Fo in Claude Web' builds a prompt with the approved route, both drafts and the contacts you type. Paste it into Claude Web with the Fo connector on and Fo sends the notices. Contacts aren't saved or sent anywhere by this page.",
@@ -156,6 +205,14 @@
     }
   ],
   "changelog": [
+    {
+      "date": "2026-10-18",
+      "text": "Scenario runs: all five routing scenarios through the full pipeline, with the verifier's route-by-route reasoning, Claude's reasoning, and per-scenario Fo prompts (including hold-and-escalate)."
+    },
+    {
+      "date": "2026-10-18",
+      "text": "Routing diagnostics: a 5-scenario test suite shared by the terminal, the MCP server and the dashboard, plus Trigger Anomaly on the real graph through ngrok with a copy-ready prompt."
+    },
     {
       "date": "2026-10-18",
       "text": "Live edge (MCP) mode: the public dashboard reads the real graph straight from the MCP server through ngrok and follows the edge node live."

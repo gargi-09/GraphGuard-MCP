@@ -106,6 +106,40 @@ main { padding: 20px 0 48px; }
 .feed-status.blocked { background: #c62f22; color: #fff; animation: pulse 1.2s ease-in-out infinite; }
 @keyframes pulse { 50% { opacity: .65; } }
 @media (prefers-reduced-motion: reduce) { .feed-status.blocked { animation: none; } .feed img { transition: none; } }
+.muted { color: var(--muted); font-weight: 400; }
+.prompt-head { display: flex; justify-content: space-between; align-items: center; gap: 10px; flex-wrap: wrap;
+  margin-top: 14px; font-size: 13px; font-weight: 600; }
+.prompt-box { margin: 8px 0 0; padding: 12px 14px; max-height: 260px; overflow: auto; white-space: pre-wrap;
+  word-break: break-word; background: var(--code); border: 1px solid var(--border); border-left: 4px solid var(--accent);
+  border-radius: 8px; font: 13px/1.5 ui-monospace, Consolas, monospace; }
+.diag-list { list-style: none; margin: 12px 0 0; padding: 0; display: flex; flex-direction: column; gap: 8px; }
+.diag-list li { display: grid; grid-template-columns: auto 1fr; gap: 4px 12px; align-items: start;
+  padding: 10px 12px; border: 1px solid var(--border); border-radius: 8px; background: var(--surface-2); }
+.diag-list .name { font-weight: 600; }
+.diag-list .detail { grid-column: 2; font-size: 13px; color: var(--muted); }
+.diag-list .detail code { font-size: 12px; }
+.badge { grid-row: span 3; min-width: 64px; text-align: center; padding: 4px 10px; border-radius: 6px;
+  font: 700 12px ui-monospace, Consolas, monospace; letter-spacing: .04em; transition: background .3s, color .3s; }
+.badge.pending { background: var(--border); color: var(--muted); }
+.badge.pass { background: #1f7a3e; color: #fff; }
+.badge.fail { background: #c62f22; color: #fff; }
+.tabs { display: flex; flex-wrap: wrap; gap: 6px; margin-bottom: 12px; }
+.tabs button[aria-selected="true"] { background: var(--accent); border-color: var(--accent); color: #fff; }
+.stage { margin-top: 12px; }
+.stage h3 { margin: 0 0 6px; font-size: 14px; }
+.routes { width: 100%; border-collapse: collapse; font-size: 13px; }
+.routes td { padding: 4px 8px; border-top: 1px solid var(--border); vertical-align: top; }
+.routes td:first-child { font-family: ui-monospace, Consolas, monospace; white-space: nowrap; }
+.routes tr.ok td:nth-child(2) { color: var(--ok); font-weight: 600; }
+.routes tr.no td:nth-child(2) { color: var(--bad); }
+.routes tr.chosen td { background: var(--ok-soft); }
+.steps { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 6px; font-size: 13px; }
+.steps li { padding: 7px 10px; border-radius: 8px; background: var(--surface-2); border: 1px solid var(--border); }
+.steps li.thinking { font-style: italic; border-left: 4px solid var(--accent); white-space: pre-wrap; }
+.steps li.call { font-family: ui-monospace, Consolas, monospace; }
+.steps li.ok { border-left: 4px solid var(--ok); }
+.steps li.bad { border-left: 4px solid var(--bad); }
+.steps .tag { font-style: normal; font-weight: 700; font-size: 11px; letter-spacing: .04em; color: var(--muted); margin-right: 6px; }
 .legend { display: flex; gap: 14px; flex-wrap: wrap; font-size: 12px; color: var(--muted); margin-top: 8px; }
 .legend i { display: inline-block; width: 22px; height: 0; border-top: 3px solid var(--muted); vertical-align: middle; margin-right: 5px; }
 .legend i.b { border-top: 3px dashed var(--bad); }
@@ -160,7 +194,46 @@ footer { color: var(--muted); font-size: 13px; padding: 0 0 32px; }
           <button id="feed-reset">Reset corridor</button>
         </div>
         <div class="result" id="feed-result"></div>
-        <p class="sub" id="feed-next" hidden style="margin-top:8px">The incident JSON and Claude Web prompt are in <a href="#panel-trigger">Vision trigger node</a>; the verified reroute is on the <a href="#panel-graph">map</a>.</p>
+        <div id="feed-prompt-box" hidden>
+          <div class="prompt-head">
+            <span>Claude Web prompt <span class="muted">(paste it with the FoGuard and Fo connectors on)</span></span>
+            <button class="primary" id="feed-copy">Copy to Clipboard</button>
+          </div>
+          <pre class="prompt-box" id="feed-prompt" tabindex="0"></pre>
+        </div>
+        <p class="sub" id="feed-next" hidden style="margin-top:8px">The verified reroute is highlighted on the <a href="#panel-graph">map</a>; the full incident record is in <a href="#panel-trigger">Vision trigger node</a>.</p>
+      </section>
+
+      <section class="card panel" id="panel-diag">
+        <h2>Routing diagnostics <span class="pill">5 scenarios</span></h2>
+        <p class="sub">The deterministic routing suite from <code>tests/test_routing.py</code>, the same code the terminal runs. Each run builds a freshly reset graph, blocks corridors per scenario, and checks the verifier's route and that every block really holds. It never touches the live graph.</p>
+        <div class="row">
+          <button class="primary" id="diag-run">Run 5/5 Diagnostics</button>
+          <button id="diag-local" hidden>Run in this page instead</button>
+        </div>
+        <div class="result" id="diag-result"></div>
+        <ol class="diag-list" id="diag-list"></ol>
+      </section>
+
+      <section class="card panel" id="panel-scen">
+        <h2>Scenario runs: the full pipeline</h2>
+        <p class="sub">Each routing scenario run end to end, with the reasoning shown: the incident, the verifier checking every route on the map, Claude's reasoning and tool calls, and the prompt Fo sends. <span id="sc-recorded"></span></p>
+        <div class="tabs" role="tablist" aria-label="Scenarios" id="sc-tabs"></div>
+        <div id="sc-body"></div>
+        <div class="row" style="margin-top:14px">
+          <button class="primary" id="sc-live">Run this scenario live with Claude</button>
+          <span class="sub" style="margin:0" id="sc-live-note">Uses the API key from the Claude recovery agent panel; runs on an in-page copy of the graph.</span>
+        </div>
+        <div class="result" id="sc-result"></div>
+        <div id="sc-fo" hidden>
+          <div class="prompt-head"><span>4. Fo: paste into Claude Web <span class="muted">(Fo connector on)</span></span>
+            <button class="primary" id="sc-copy">Copy to Clipboard</button></div>
+          <div class="row" style="margin-top:8px">
+            <label for="sc-fac">Facilities</label><input id="sc-fac" size="24" placeholder="email facilities@example.com" autocomplete="off">
+            <label for="sc-rec">Recipient</label><input id="sc-rec" size="20" placeholder="text +15550000000" autocomplete="off">
+          </div>
+          <pre class="prompt-box" id="sc-prompt" tabindex="0"></pre>
+        </div>
       </section>
 
       <section class="card panel" id="panel-graph">
@@ -342,6 +415,17 @@ const sim = (() => {
       blocked = new Set(blockedPairs.map(([a, b]) => key(a, b)));
       try { return shortest(origin, destination); } finally { blocked = saved; }
     },
+    verifyWith(blockedPairs, path) {
+      const saved = blocked;
+      blocked = new Set(blockedPairs.map(([a, b]) => key(a, b)));
+      try { return verifyRoute(path); } finally { blocked = saved; }
+    },
+    // Run fn against another graph state, then restore this page's own state.
+    withBlocked(blockedPairs, fn) {
+      const saved = blocked;
+      blocked = new Set(blockedPairs.map(([a, b]) => key(a, b)));
+      try { return fn(); } finally { blocked = saved; }
+    },
   };
 })();
 
@@ -415,7 +499,22 @@ const mcpClient = () => {
   if (!mcp || mcp.url !== url) mcp = makeMcpClient(url);
   return mcp;
 };
-const READ_ONLY = "Live edge mode is read-only: the real graph changes only when the edge node reports. Run python -m vision.trigger_node --visual-demo on the edge laptop and this page updates within a few seconds, or switch to Browser mode to try it here.";
+const READ_ONLY = "In Live edge mode the only change this page can make is the anomaly on the monitored corridor (Trigger Anomaly / Reset corridor in the camera feed). The edge laptop changes the rest; switch to Browser mode to edit freely here.";
+
+// Plain HTTP routes on the edge server (next to /mcp): diagnostics and the
+// anomaly. Every request carries ngrok-skip-browser-warning, and anything that
+// isn't JSON (ngrok's offline or warning page) becomes a readable error.
+const edgeBase = () => ($("mcp-url").value.trim() || DATA.mcp.public_url).replace(/\/mcp\/?$/, "");
+async function edgeFetch(path, method = "GET") {
+  let res;
+  try { res = await fetch(edgeBase() + path, { method, headers: { "ngrok-skip-browser-warning": "true" } }); }
+  catch { throw new Error(`Can't reach the edge server at ${edgeBase()}. Is mcp_server.py running, with ngrok?`); }
+  if (!(res.headers.get("content-type") || "").includes("application/json"))
+    throw new Error(`The edge server at ${edgeBase()} isn't answering (HTTP ${res.status}). Check that mcp_server.py and ngrok are running.`);
+  const data = await res.json();
+  if (!res.ok) throw new Error(data.detail || `Edge server error (HTTP ${res.status})`);
+  return data;
+}
 
 const backend = {
   topology: () => mode === "live" ? api("/api/topology")
@@ -451,31 +550,37 @@ const MAX_AGENT_TURNS = 12;
 // graph: the in-page simulation, or an adapter over the live MCP server
 // (topology/propose may be async; no setBlocked on the read-only live graph).
 function makeBrowserAgent(Anthropic, graph, DATA) {
-  return async function runAgent(apiKey, log) {
+  // incident: optional (a scenario's); by default it's built from the graph.
+  return async function runAgent(apiKey, log, incident = null) {
     const client = new Anthropic({ apiKey, dangerouslyAllowBrowser: true });
     const cfg = DATA.agent; const fac = DATA.facility;
-    let blocked = (await graph.topology()).blocked_corridors;
-    if (!blocked.length) {
-      if (!graph.setBlocked) throw new Error("No corridor is blocked in the live graph yet. Trigger the edge node first.");
-      graph.setBlocked(...fac.monitored_corridor, true);
-      blocked = [fac.monitored_corridor];
-      log(`[trigger] No corridor was blocked; simulated an obstruction on ${fac.monitored_corridor.join(" <-> ")}`);
+    if (!incident) {
+      let blocked = (await graph.topology()).blocked_corridors;
+      if (!blocked.length) {
+        if (!graph.setBlocked) throw new Error("No corridor is blocked in the live graph yet. Trigger the edge node first.");
+        graph.setBlocked(...fac.monitored_corridor, true);
+        blocked = [fac.monitored_corridor];
+        log(`[trigger] No corridor was blocked; simulated an obstruction on ${fac.monitored_corridor.join(" <-> ")}`);
+      }
+      incident = { event: "OBSTRUCTION_DETECTED", blocked_corridors: blocked, blocked_corridor: blocked[0], origin: fac.origin,
+        destination: fac.destination, timestamp: new Date().toISOString().replace(/\.\d+Z$/, "+00:00") };
     }
-    const incident = { event: "OBSTRUCTION_DETECTED", blocked_corridor: blocked[0], origin: fac.origin,
-      destination: fac.destination, timestamp: new Date().toISOString().replace(/\.\d+Z$/, "+00:00") };
     const messages = [{ role: "user", content: `FoGuard incident report:\n${JSON.stringify(incident, null, 2)}` }];
-    const proposals = []; let approved = null;
+    const proposals = [], transcript = []; let approved = null;
     const runTool = async (name, input) => {
       if (name === "get_workspace_topology") {
         const t = await graph.topology();
-        log(`  <- topology: blocked corridors ${JSON.stringify(t.blocked_corridors)}`);
+        const summary = `blocked corridors ${JSON.stringify(t.blocked_corridors)}`;
+        log(`  <- topology: ${summary}`); transcript.push({ type: "tool_result", tool: name, summary });
         return t;
       }
       if (name === "propose_recovery_route") {
         const r = await graph.propose(input.origin, input.destination, input.proposed_path || []);
         proposals.push({ path: input.proposed_path, ...r });
-        if (r.approved) { approved = r; log(`  <- APPROVED ${r.route.join("-")} (${r.total_distance_m} m)`); }
-        else log(`  <- REJECTED ${(input.proposed_path || []).join("-")}: ${r.reason}`);
+        if (r.approved) approved = r;
+        const summary = r.approved ? `APPROVED ${r.route.join("-")} (${r.total_distance_m} m)`
+          : `REJECTED ${(input.proposed_path || []).join("-")}: ${r.reason}`;
+        log(`  <- ${summary}`); transcript.push({ type: "tool_result", tool: name, approved: r.approved, summary });
         return r;
       }
       return { error: `Unknown tool ${name}` };
@@ -484,20 +589,26 @@ function makeBrowserAgent(Anthropic, graph, DATA) {
     for (let turn = 0; turn < MAX_AGENT_TURNS; turn++) {
       const res = await client.beta.messages.create({
         model: cfg.model, max_tokens: 16000, system: cfg.system, tools: cfg.tools, messages,
-        output_config: { effort: "medium" },
+        thinking: cfg.thinking, output_config: { effort: "medium" },
         betas: ["server-side-fallback-2026-07-01"], fallbacks: "default",
       });
       if (res.stop_reason === "refusal") throw new Error("Claude declined the request.");
       messages.push({ role: "assistant", content: res.content });
+      for (const b of res.content) {
+        if (b.type === "thinking" && b.thinking && b.thinking.trim()) {
+          log(`  [Claude's reasoning] ${b.thinking.trim()}`); transcript.push({ type: "thinking", text: b.thinking.trim() });
+        }
+      }
       const uses = res.content.filter((b) => b.type === "tool_use");
       if (res.stop_reason !== "tool_use" || !uses.length) {
         const final_text = res.content.filter((b) => b.type === "text").map((b) => b.text).join("\n").trim();
-        return { incident, approved_route: approved, proposals, final_text };
+        return { incident, approved_route: approved, proposals, transcript, final_text };
       }
       // Answer every tool call from this turn in one message.
       const results = [];
       for (const u of uses) {
         log(`  -> ${u.name}(${u.input && Object.keys(u.input).length ? JSON.stringify(u.input) : ""})`);
+        transcript.push({ type: "tool_use", tool: u.name, input: u.input || {} });
         results.push({ type: "tool_result", tool_use_id: u.id, content: JSON.stringify(await runTool(u.name, u.input || {})) });
       }
       messages.push({ role: "user", content: results });
@@ -715,10 +826,11 @@ function init() {
       reroute_line: line, incident_json: pyJson(incident) });
   };
   const runTrigger = async () => {
-    if (mode === "mcp") throw new Error(READ_ONLY);
     clearOut($("t-out"));
     let out;
     if (mode === "live") out = await api("/api/trigger/mock", {});
+    // Live edge: the edge server blocks the real graph and returns the prompt.
+    else if (mode === "mcp") { out = await edgeFetch("/trigger_anomaly", "POST"); lastLiveJson = JSON.stringify(out.topology.corridors); }
     else {
       const [a, b] = DATA.facility.monitored_corridor; sim.setBlocked(a, b, true);
       const incident = { event: "OBSTRUCTION_DETECTED", blocked_corridor: [a, b], origin: DATA.facility.origin,
@@ -726,7 +838,7 @@ function init() {
       const reroute = sim.shortest(incident.origin, incident.destination);
       out = { incident, reroute, prompt: buildRecoveryPrompt(incident, reroute) };
     }
-    routeShown = out.reroute.valid ? out.reroute.path : []; drawMap(await backend.topology());
+    routeShown = out.reroute.valid ? out.reroute.path : []; drawMap(out.topology || await backend.topology());
     $("t-out").textContent = JSON.stringify(out.incident, null, 2) + (out.prompt ? "\n\n--- recovery prompt for Claude Web ---\n" + out.prompt : "");
     lastPrompt = out.prompt || ""; $("t-copy-row").hidden = !lastPrompt;
     const [a, b] = out.incident.blocked_corridor;
@@ -737,22 +849,98 @@ function init() {
 
   $("feed-trigger").onclick = () => run($("feed-result"), async () => {
     $("feed-trigger").disabled = true;
+    const status = $("feed-status");
     try {
-      const summary = await runTrigger();  // blocks the corridor; drawMap swaps the feed
+      // Show the incident immediately; drawMap then confirms it from the graph.
+      if (DATA.feed.blocked) $("feed-img").setAttribute("src", DATA.feed.blocked);
+      status.className = "feed-status blocked"; status.textContent = "Status: OBSTRUCTION DETECTED";
+      const summary = await runTrigger();
       setResult($("t-result"), summary[0], summary[1]);
+      $("feed-prompt").textContent = lastPrompt; $("feed-prompt-box").hidden = !lastPrompt;
       $("feed-next").hidden = false;
       return summary;
+    } catch (e) {
+      if (lastTopology) updateFeed(lastTopology);  // put the feed back to what the graph says
+      throw e;
     } finally { $("feed-trigger").disabled = false; }
   });
   $("feed-reset").onclick = () => run($("feed-result"), async () => {
     const [a, b] = DATA.facility.monitored_corridor;
-    routeShown = []; drawMap(await backend.setBlocked(a, b, false)); $("feed-next").hidden = true;
+    let topo;
+    if (mode === "mcp") { topo = (await edgeFetch("/clear_anomaly", "POST")).topology; lastLiveJson = JSON.stringify(topo.corridors); }
+    else topo = await backend.setBlocked(a, b, false);
+    routeShown = []; drawMap(topo);
+    $("feed-next").hidden = true; $("feed-prompt-box").hidden = true;
     return [true, `Corridor ${a} ↔ ${b} cleared. Feed back to baseline.`];
+  });
+  $("feed-copy").onclick = async () => {
+    try { await navigator.clipboard.writeText($("feed-prompt").textContent); $("feed-copy").textContent = "Copied ✓"; }
+    catch { $("feed-copy").textContent = "Copy failed: select the text"; }
+    setTimeout(() => { $("feed-copy").textContent = "Copy to Clipboard"; }, 2500);
+  };
+
+  // ---- diagnostics: tests/test_routing.py, from the server or (fallback) in the page
+  const runDiagnosticsInPage = () => {
+    const started = performance.now();
+    const results = DATA.diagnostics.scenarios.map((s) => {
+      const t0 = performance.now();
+      const result = sim.shortestWith(s.blocked, s.origin, s.destination);
+      const ms = Math.round((performance.now() - t0) * 100) / 100;
+      const failures = [], e = s.expect;
+      if (result.valid !== e.valid) failures.push(`expected valid=${e.valid}, got valid=${result.valid}`);
+      else if (e.valid) {
+        if (result.path.join() !== e.path.join()) failures.push(`expected path ${e.path.join("-")}, got ${result.path.join("-")}`);
+        if (result.total_distance !== e.total_distance) failures.push(`expected ${e.total_distance} m, got ${result.total_distance} m`);
+      }
+      for (const [a, b] of s.blocked) if (sim.verifyWith(s.blocked, [a, b]).valid) failures.push(`blocked corridor ${a} <-> ${b} was still accepted`);
+      return { ...s, expected: e, result, passed: !failures.length, failures, duration_ms: ms };
+    });
+    const passed = results.filter((r) => r.passed).length;
+    return { suite: DATA.diagnostics.suite, ran_at: new Date().toISOString(), engine: "JavaScript simulation in this page (no server)",
+      passed, total: results.length, all_passed: passed === results.length,
+      duration_ms: Math.round((performance.now() - started) * 100) / 100, results };
+  };
+  const describe = (r) => r.result.valid ? `${r.result.path.join(" → ")} (${r.result.total_distance} m)` : `no route: ${r.result.reason}`;
+  async function renderDiagnostics(report) {
+    const list = $("diag-list"); list.textContent = "";
+    const badges = report.results.map((r) => {
+      const li = document.createElement("li");
+      const badge = document.createElement("span"); badge.className = "badge pending"; badge.textContent = "…";
+      const name = document.createElement("span"); name.className = "name"; name.textContent = `${r.id}. ${r.name}`;
+      const desc = document.createElement("span"); desc.className = "detail"; desc.textContent = r.description;
+      const res = document.createElement("span"); res.className = "detail";
+      const blocked = r.blocked.length ? r.blocked.map(([a, b]) => `${a}↔${b}`).join(", ") : "none";
+      res.textContent = `Blocked: ${blocked} · Trip ${r.origin} → ${r.destination} · Result: ${describe(r)}` +
+        (r.failures.length ? ` · ${r.failures.join("; ")}` : "");
+      li.append(badge, name, desc, res); list.append(li);
+      return [badge, r.passed];
+    });
+    // Light the badges up one by one.
+    for (const [badge, passed] of badges) {
+      await new Promise((ok) => setTimeout(ok, 280));
+      badge.className = "badge " + (passed ? "pass" : "fail"); badge.textContent = passed ? "PASS" : "FAIL";
+    }
+    return [report.all_passed, `${report.passed}/${report.total} passed in ${report.duration_ms} ms · ${report.engine} · ${new Date(report.ran_at).toLocaleTimeString()}`];
+  }
+  $("diag-run").onclick = () => run($("diag-result"), async () => {
+    $("diag-run").disabled = true; $("diag-local").hidden = true;
+    clearOut($("diag-result")); $("diag-list").textContent = "";
+    try {
+      const report = mode === "live" ? await api("/api/run_diagnostics") : await edgeFetch("/run_diagnostics");
+      return await renderDiagnostics(report);
+    } catch (e) {
+      $("diag-local").hidden = false;
+      throw new Error(`${e.message} You can run the same five scenarios in this page instead.`);
+    } finally { $("diag-run").disabled = false; }
+  });
+  $("diag-local").onclick = () => run($("diag-result"), async () => {
+    $("diag-local").hidden = true; $("diag-list").textContent = "";
+    return renderDiagnostics(runDiagnosticsInPage());
   });
   $("t-copy").onclick = async () => { try { await navigator.clipboard.writeText(lastPrompt); $("t-copy").textContent = "Copied"; } catch { $("t-copy").textContent = "Copy failed"; } };
 
   $("demo").onclick = () => run($("d-result"), async () => {
-    if (mode === "mcp") return [false, "The demo resets and blocks corridors, so it runs in Browser or Local server mode. Live edge mode only follows the real graph."];
+    if (mode === "mcp") return [false, "The demo resets and blocks corridors, so it runs in Browser or Local server mode. In Live edge mode use Trigger Anomaly and Run 5/5 Diagnostics."];
     $("d-out").textContent = "Running…";
     if (mode === "live") {
       const r = await api("/api/demo", {}); $("d-out").textContent = r.output; await refresh();
@@ -777,12 +965,16 @@ function init() {
   // Fo handoff: fill FO_PROMPT_TEMPLATE from recovery_agent.py (via data.js)
   // with the run's result and the contacts typed here.
   let handoff = null;
+  // Same as recovery_agent.build_fo_prompt: one or several blocked corridors,
+  // and the hold-and-escalate version when no route was approved.
   const buildFoPrompt = (incident, outcome, fac, rec) => {
     const r = outcome.approved_route; const np = DATA.agent.not_provided;
-    const vals = { timestamp: incident.timestamp, corridor: incident.blocked_corridor.join(" <-> "),
-      route: r.route.join(" -> "), distance: String(r.total_distance_m), origin: incident.origin,
-      destination: incident.destination, facilities: fac || np, recipient: rec || np, notices: outcome.final_text };
-    return DATA.agent.fo_prompt_template.replace(/\{(\w+)\}/g, (m, k) => (k in vals ? vals[k] : m));
+    const pairs = (incident.blocked_corridors || [incident.blocked_corridor]).map((c) => c.join(" <-> "));
+    const vals = { timestamp: incident.timestamp, corridor: (pairs.length === 1 ? "corridor " : "corridors ") + pairs.join(" and "),
+      origin: incident.origin, destination: incident.destination, facilities: fac || np, recipient: rec || np,
+      notices: outcome.final_text, ...(r ? { route: r.route.join(" -> "), distance: String(r.total_distance_m) } : {}) };
+    const template = r ? DATA.agent.fo_prompt_template : DATA.agent.fo_escalation_template;
+    return template.replace(/\{(\w+)\}/g, (m, k) => (k in vals ? vals[k] : m));
   };
   const renderHandoff = () => {
     if (!handoff) return;
@@ -875,6 +1067,134 @@ function init() {
   });
   $("mcp-local").onclick = () => mcpCheck(DATA.mcp.local_url);
   $("mcp-public").onclick = () => mcpCheck($("mcp-url").value.trim() || DATA.mcp.public_url);
+
+  // ---- scenario runs: each scenario through the whole pipeline (scenario_pipeline.py),
+  // replayed from the saved Python runs or run live in the page with your key.
+  const scenarios = DATA.diagnostics.scenarios;
+  const recordedRuns = new Map(((DATA.scenario_runs || {}).runs || []).map((r) => [r.scenario.id, r]));
+  const liveRuns = new Map();
+  let currentScenario = scenarios[0].id;
+  const make = (tag, cls, text) => { const e = document.createElement(tag); if (cls) e.className = cls; if (text != null) e.textContent = text; return e; };
+  const candidatePaths = (origin, destination) => {
+    const nb = {};
+    for (const c of DATA.facility.corridors) { (nb[c.a] ||= []).push(c.b); (nb[c.b] ||= []).push(c.a); }
+    const paths = [], stack = [[origin]];
+    while (stack.length) {
+      const p = stack.pop();
+      if (p[p.length - 1] === destination) { paths.push(p); continue; }
+      for (const n of [...(nb[p[p.length - 1]] || [])].sort()) if (!p.includes(n)) stack.push([...p, n]);
+    }
+    return paths;
+  };
+  // Same reasoning as graph.tools.route_options, computed in the page.
+  const inPageOptions = (s) => {
+    const options = candidatePaths(s.origin, s.destination).map((path) => {
+      const v = sim.verifyWith(s.blocked, path);
+      return { path, valid: v.valid, total_distance: v.valid ? v.total_distance : null, reason: v.valid ? null : v.reason };
+    }).sort((x, y) => (x.valid === y.valid ? 0 : x.valid ? -1 : 1) || (x.total_distance || 0) - (y.total_distance || 0) || x.path.length - y.path.length);
+    return { options, chosen: sim.shortestWith(s.blocked, s.origin, s.destination) };
+  };
+  const scenarioIncident = (s) => ({ event: "OBSTRUCTION_DETECTED", scenario: s.name, blocked_corridors: s.blocked,
+    blocked_corridor: s.blocked[0], origin: s.origin, destination: s.destination,
+    timestamp: new Date().toISOString().replace(/\.\d+Z$/, "+00:00") });
+
+  function renderScenario() {
+    const s = scenarios.find((x) => x.id === currentScenario);
+    const live = liveRuns.get(s.id), run = live || recordedRuns.get(s.id);
+    for (const b of $("sc-tabs").children) b.setAttribute("aria-selected", String(Number(b.dataset.id) === s.id));
+    const body = $("sc-body"); body.textContent = "";
+    body.append(make("p", "sub", s.description));
+
+    const st1 = make("div", "stage"); st1.append(make("h3", null, "1. Incident"));
+    st1.append(make("p", "sub", s.blocked.length
+      ? `Blocked: ${s.blocked.map(([a, b]) => `${a} ↔ ${b}`).join(", ")} · delivery ${s.origin} → ${s.destination}. The edge node reports it and the corridors are blocked in the graph.`
+      : `No corridor blocked: a routine check of ${s.origin} → ${s.destination}. No incident is raised, so nothing downstream fires (no false alarms).`));
+    body.append(st1);
+
+    const opts = run ? run.route_options : inPageOptions(s);
+    const st2 = make("div", "stage"); st2.append(make("h3", null, "2. Verifier reasoning: every route on the map, checked"));
+    const table = make("table", "routes"); const chosen = opts.chosen;
+    for (const o of opts.options) {
+      const isChosen = chosen.valid && o.path.join() === chosen.path.join();
+      const tr = make("tr", (o.valid ? "ok" : "no") + (isChosen ? " chosen" : ""));
+      tr.append(make("td", null, o.path.join("-")), make("td", null, o.valid ? `OK · ${o.total_distance} m${isChosen ? " · chosen (shortest)" : ""}` : o.reason));
+      table.append(tr);
+    }
+    st2.append(table);
+    const matches = s.expect.valid ? chosen.valid && chosen.path.join() === s.expect.path.join() : !chosen.valid;
+    st2.append(make("p", "sub", (chosen.valid ? `Chosen: ${chosen.path.join(" → ")} (${chosen.total_distance} m).` : `No route: ${chosen.reason}`) +
+      ` Matches the expected result in tests/test_routing.py: ${matches ? "yes" : "NO"}.`));
+    body.append(st2);
+
+    const st3 = make("div", "stage"); st3.append(make("h3", null, "3. Claude: reasoning and tool calls"));
+    if (!s.blocked.length) st3.append(make("p", "sub", "Nothing to recover, so Claude isn't called."));
+    else if (!run || !run.agent) st3.append(make("p", "sub", "No recorded Claude run for this scenario yet. Run it live below."));
+    else {
+      const a = run.agent;
+      st3.append(make("p", "sub", live ? `Live run in this page, ${new Date(live.incident.timestamp).toLocaleTimeString()}.`
+        : `Recorded run of scenario_pipeline.py (real Claude API call, ${a.model}), ${new Date(run.incident.timestamp).toLocaleString()}.`));
+      const steps = make("ol", "steps");
+      for (const ev of a.transcript || []) {
+        if (ev.type === "thinking") { const li = make("li", "thinking"); li.append(make("span", "tag", "CLAUDE'S REASONING"), document.createTextNode(ev.text)); steps.append(li); }
+        else if (ev.type === "tool_use") steps.append(make("li", "call", `→ ${ev.tool}(${Object.keys(ev.input || {}).length ? JSON.stringify(ev.input) : ""})`));
+        else { const li = make("li", ev.approved === false ? "bad" : "ok"); li.append(make("span", "tag", ev.tool === "get_workspace_topology" ? "GRAPH" : "VERIFIER"), document.createTextNode(ev.summary)); steps.append(li); }
+      }
+      st3.append(steps);
+      const outcomeLine = a.approved_route
+        ? `Verifier-approved route: ${a.approved_route.route.join(" → ")} (${a.approved_route.total_distance_m} m) after ${a.proposals.length} proposal(s).`
+        : `No route approved (${a.proposals.length} proposal(s), all rejected): Claude escalates instead of inventing one.`;
+      st3.append(make("p", "sub", outcomeLine));
+      st3.append(make("div", "out mono", a.final_text));
+    }
+    body.append(st3);
+
+    const canFo = !!(run && run.agent && run.incident);
+    $("sc-fo").hidden = !canFo;
+    if (canFo) $("sc-prompt").textContent = buildFoPrompt(run.incident, run.agent, $("sc-fac").value.trim(), $("sc-rec").value.trim());
+    $("sc-live").disabled = !s.blocked.length;
+    $("sc-live-note").textContent = s.blocked.length
+      ? "Uses the API key from the Claude recovery agent panel; runs on an in-page copy of the graph."
+      : "No incident in this scenario, so there's nothing for Claude to recover.";
+    // In Browser mode, show the scenario on the map (blocks and chosen route).
+    if (mode === "sim") { routeShown = chosen.valid ? chosen.path : []; drawMap(sim.withBlocked(s.blocked, () => sim.topology())); }
+  }
+
+  for (const s of scenarios) {
+    const b = make("button", null, `${s.id}. ${s.name}`); b.dataset.id = s.id; b.setAttribute("role", "tab");
+    b.onclick = () => { currentScenario = s.id; clearOut($("sc-result")); renderScenario(); };
+    $("sc-tabs").append(b);
+  }
+  const rec = DATA.scenario_runs;
+  $("sc-recorded").textContent = rec ? `Recorded ${new Date(rec.recorded_at).toLocaleString()} with ${rec.model}.` : "";
+  $("sc-fac").oninput = $("sc-rec").oninput = () => renderScenario();
+  $("sc-copy").onclick = async () => {
+    try { await navigator.clipboard.writeText($("sc-prompt").textContent); $("sc-copy").textContent = "Copied ✓"; }
+    catch { $("sc-copy").textContent = "Copy failed: select the text"; }
+    setTimeout(() => { $("sc-copy").textContent = "Copy to Clipboard"; }, 2500);
+  };
+  $("sc-live").onclick = () => run($("sc-result"), async () => {
+    const s = scenarios.find((x) => x.id === currentScenario);
+    const key = $("a-key").value.trim();
+    if (!key) return [false, "Paste an Anthropic API key in the Claude recovery agent panel first (or use the recorded run above)."];
+    if (!confirm(`Run scenario ${s.id} (${s.name}) live with Claude? This spends a little Anthropic API credit.`)) return null;
+    $("sc-live").disabled = true; $("sc-result").className = "result"; $("sc-result").textContent = "Claude is working (usually 20–90 seconds)…";
+    try {
+      let Anthropic;
+      try { ({ default: Anthropic } = await import(SDK_URL)); }
+      catch (e) { throw new Error(`Couldn't load the Anthropic SDK from the CDN: ${e.message}`); }
+      const graph = { topology: () => sim.withBlocked(s.blocked, () => sim.topology()),
+                      propose: (o, d, p) => sim.withBlocked(s.blocked, () => sim.propose(o, d, p)) };
+      const incident = scenarioIncident(s);
+      let agent;
+      try { agent = await makeBrowserAgent(Anthropic, graph, DATA)(key, () => {}, incident); }
+      catch (e) { throw new Error(e.status === 401 ? "The Anthropic API rejected that key." : `Claude API error${e.status ? ` (HTTP ${e.status})` : ""}: ${e.message}`); }
+      liveRuns.set(s.id, { scenario: s, incident, route_options: inPageOptions(s), agent: { model: DATA.agent.model, ...agent } });
+      renderScenario();
+      return agent.approved_route ? [true, `Live run done: ${agent.approved_route.route.join(" → ")} approved after ${agent.proposals.length} proposal(s).`]
+        : [true, `Live run done: no route approved after ${agent.proposals.length} proposal(s); Claude escalated.`];
+    } finally { $("sc-live").disabled = false; }
+  });
+  renderScenario();
 
   const savedTheme = storage.get("foguard-theme"); if (savedTheme) document.documentElement.dataset.theme = savedTheme;
   const savedKey = storage.get("foguard-key"); if (savedKey) { $("a-key").value = savedKey; $("a-remember").checked = true; }

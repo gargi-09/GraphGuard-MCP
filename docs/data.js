@@ -50,7 +50,7 @@ window.FOGUARD = {
       "how_it_works": [
         "--mock simulates an obstruction instantly, with no camera or GPU.",
         "--visual-demo is the presentation mode for judges: it shows a simulated camera feed of the open corridor for 3 seconds, swaps to the blocked corridor (boxes fallen) for 2 seconds, then blocks the corridor in the graph and prints the incident. The images live in demo_assets/; they're displayed, not analyzed.",
-        "On the dashboard, the Edge Vision Node Feed shows the camera view of corridor B ↔ C. 'Trigger Anomaly' simulates boxes falling: the image switches to the blocked aisle, the corridor is blocked in the graph, the route is recalculated, and the Claude Web prompt is generated. The image always follows the graph's state for that corridor.",
+        "On the dashboard, the Edge Vision Node Feed shows the camera view of corridor B ↔ C. 'Trigger Anomaly' simulates boxes falling: the image switches to the blocked aisle, the corridor is blocked in the graph (the real one, in Live edge mode), the route is recalculated, and the Claude Web prompt appears in a copy box. The image always follows the graph's state for that corridor.",
         "--webcam runs the DepthAR segmentor on a live camera. It counts as obstructed when people cover more than 35% of the corridor region, or when more than 8% of the region differs from a captured picture of the empty corridor (for boxes and carts).",
         "It only arms after capturing the empty corridor, waits for nobody to be in view before capturing, and needs 3 obstructed readings in a row before raising an incident.",
         "Depth isn't used for the decision: Depth Anything's depth is rescaled every frame, and in testing it went the wrong way when the corridor was blocked."
@@ -68,6 +68,53 @@ window.FOGUARD = {
       ]
     },
     {
+      "id": "diagnostics",
+      "title": "Routing diagnostics (5/5)",
+      "summary": "Five fixed routing scenarios that prove the guardrail is deterministic: the same blocked corridors always give the same verified route, or a clear 'no route'.",
+      "how_it_works": [
+        "tests/test_routing.py is the single source of truth: the terminal, the MCP server's GET /run_diagnostics, the local API and this dashboard all run the same scenarios.",
+        "Scenarios: classic reroute (A-D-E-F, 38 m), cross-link (A-B-D-E-F, 39 m), short trip (B-D-E, 20 m), impossible route (no route to F), clear path (D-B-C, 18 m).",
+        "Each run builds a freshly seeded graph in a throwaway database, so results are deterministic and the live graph is never touched, even when the endpoint is called publicly.",
+        "Besides the route, each scenario checks that every blocked corridor is really rejected by the verifier.",
+        "On the dashboard, 'Run 5/5 Diagnostics' fetches /run_diagnostics from the edge server; if it's unreachable you can run the same scenarios in the page instead."
+      ],
+      "files": [
+        "tests/test_routing.py",
+        "mcp_server.py"
+      ],
+      "run": "python tests/test_routing.py",
+      "panel": "diag",
+      "modes": [
+        "browser",
+        "live edge (MCP)",
+        "local server"
+      ]
+    },
+    {
+      "id": "scenarios",
+      "title": "Scenario runs: full pipeline",
+      "summary": "Each routing scenario run end to end with its reasoning shown: incident, the verifier checking every route on the map, Claude's reasoning and tool calls, and the prompt Fo sends.",
+      "how_it_works": [
+        "scenario_pipeline.py takes the scenarios from tests/test_routing.py and, for each, blocks its corridors on the live graph (a dashboard in Live edge mode follows along).",
+        "The verifier's reasoning is shown in full: every route that physically exists, each run through the same guardrail, with its distance or exact rejection reason.",
+        "Claude then handles the incident with summarized reasoning switched on, so you see why it proposes what it does, and how it reacts to rejections.",
+        "The Fo prompt is built per scenario: a reroute, or a hold-and-escalate message when no route exists. A scenario with nothing blocked raises no incident at all.",
+        "Runs are saved to docs/scenario_runs.json (without contacts) so this page can replay them; with your own API key you can run any scenario live here."
+      ],
+      "files": [
+        "scenario_pipeline.py",
+        "graph/tools.py",
+        "recovery_agent.py",
+        "docs/scenario_runs.json"
+      ],
+      "run": "python scenario_pipeline.py",
+      "panel": "scen",
+      "modes": [
+        "browser",
+        "local server"
+      ]
+    },
+    {
       "id": "mcp",
       "title": "MCP server",
       "summary": "Exposes the graph to AI agents such as Claude Web through two tools: get_workspace_topology and propose_recovery_route. This dashboard also talks to it directly, so the public site can follow the real graph on the edge laptop.",
@@ -75,6 +122,7 @@ window.FOGUARD = {
         "Runs over stdio for Claude Desktop/Code, or over HTTP at /mcp for remote connectors (published through ngrok).",
         "Only reads the graph: an agent can look and get routes checked, but can't change anything.",
         "Answers browser requests (CORS) from the GitHub Pages site and localhost, so 'Check public' and Live edge mode call it straight from the page. Every request sends ngrok-skip-browser-warning so ngrok's free tier doesn't return its warning page.",
+        "Also serves three plain HTTP routes for the dashboard: GET /run_diagnostics (the routing suite), and POST /trigger_anomaly and /clear_anomaly, the only changes possible over the public URL (block or clear the monitored corridor).",
         "Live edge mode re-reads the graph every 3 seconds: run the trigger on the edge laptop and the map, route and camera feed here update within a few seconds.",
         "Opens the database only for each call, so the trigger node and demo can update the graph while it runs."
       ],
@@ -96,6 +144,7 @@ window.FOGUARD = {
       "summary": "Claude Opus 5.5 reads the graph, finds the shortest open route, gets it approved by the verifier, and drafts the two recovery notices. You then paste a ready-made prompt into Claude Web, where Fo sends them.",
       "how_it_works": [
         "Claude gets two tools: one to read the graph and one to propose a route. It must get a route approved before it may state one.",
+        "Claude's reasoning is returned as readable summaries (summarized thinking), shown alongside its tool calls, so you can see how it chose a route. If no route exists it says so and escalates instead of inventing one.",
         "The approved route is taken from the verifier's own result, not from Claude's text.",
         "In this page it calls the Claude API directly with the key you paste in; the key goes only to api.anthropic.com. The same model, prompt and tool definitions are generated from recovery_agent.py.",
         "After a run, 'Send with Fo in Claude Web' builds a prompt with the approved route, both drafts and the contacts you type. Paste it into Claude Web with the Fo connector on and Fo sends the notices. Contacts aren't saved or sent anywhere by this page.",
@@ -160,6 +209,14 @@ window.FOGUARD = {
   "changelog": [
     {
       "date": "2026-10-18",
+      "text": "Scenario runs: all five routing scenarios through the full pipeline, with the verifier's route-by-route reasoning, Claude's reasoning, and per-scenario Fo prompts (including hold-and-escalate)."
+    },
+    {
+      "date": "2026-10-18",
+      "text": "Routing diagnostics: a 5-scenario test suite shared by the terminal, the MCP server and the dashboard, plus Trigger Anomaly on the real graph through ngrok with a copy-ready prompt."
+    },
+    {
+      "date": "2026-10-18",
       "text": "Live edge (MCP) mode: the public dashboard reads the real graph straight from the MCP server through ngrok and follows the edge node live."
     },
     {
@@ -201,7 +258,7 @@ window.FOGUARD = {
   ],
   "agent": {
     "model": "claude-opus-5-5",
-    "system": "You are FoGuard's incident-recovery agent for a facility's delivery robots. The facility is a set of waypoints joined by two-way corridors, and FoGuard's graph is the only source of truth about which corridors are passable.\n\nWhen an obstruction is reported:\n1. Call get_workspace_topology to see the current layout.\n2. Work out the shortest route from the origin to the destination that avoids every blocked corridor and location, and submit it with propose_recovery_route. If it is rejected, read the reason, fix the path and propose again. Never state a route that propose_recovery_route has not approved.\n3. Write two short notices: one asking the facilities team to clear the blocked corridor, and one telling the recipient at the destination that the delivery is being rerouted and may be delayed. Include the approved route and its distance.\n4. No messaging tools are connected. Finish with the two notices as drafts under the headings \"Facilities notice\" and \"Recipient notice\".",
+    "system": "You are FoGuard's incident-recovery agent for a facility's delivery robots. The facility is a set of waypoints joined by two-way corridors, and FoGuard's graph is the only source of truth about which corridors are passable.\n\nWhen an obstruction is reported:\n1. Call get_workspace_topology to see the current layout.\n2. Work out the shortest route from the origin to the destination that avoids every blocked corridor and location, and submit it with propose_recovery_route. If it is rejected, read the reason, fix the path and propose again. Never state a route that propose_recovery_route has not approved.\n3. Write two short notices: one asking the facilities team to clear the blocked corridor(s), and one telling the recipient at the destination that the delivery is being rerouted and may be delayed. Include the approved route and its distance.\n\nIf every route you can find is rejected and the graph shows no passable route at all, don't invent one: say so plainly, and write the notices instead as an urgent request to facilities naming the corridor(s) to clear to restore access, and a message to the recipient that the delivery is on hold.\n4. No messaging tools are connected. Finish with the two notices as drafts under the headings \"Facilities notice\" and \"Recipient notice\".",
     "tools": [
       {
         "name": "get_workspace_topology",
@@ -248,12 +305,17 @@ window.FOGUARD = {
         "strict": true
       }
     ],
-    "fo_prompt_template": "FoGuard incident at {timestamp}: corridor {corridor} is obstructed. FoGuard's route verifier approved the reroute {route} ({distance} m) for the delivery from {origin} to {destination}.\n\nPlease use Fo to send the two notices drafted below:\n1. The \"Facilities notice\" to the facilities team: {facilities}\n2. The \"Recipient notice\" to the recipient at {destination}: {recipient}\n\nSend each notice only to the contact listed for it, using the channel given (email, text or call). If a contact says \"not provided\", don't send that notice; ask me for the contact instead.\n\nDrafted notices:\n\n{notices}",
+    "thinking": {
+      "type": "adaptive",
+      "display": "summarized"
+    },
+    "fo_prompt_template": "FoGuard incident at {timestamp}: {corridor} obstructed. FoGuard's route verifier approved the reroute {route} ({distance} m) for the delivery from {origin} to {destination}.\n\nPlease use Fo to send the two notices drafted below:\n1. The \"Facilities notice\" to the facilities team: {facilities}\n2. The \"Recipient notice\" to the recipient at {destination}: {recipient}\n\nSend each notice only to the contact listed for it, using the channel given (email, text or call). If a contact says \"not provided\", don't send that notice; ask me for the contact instead.\n\nDrafted notices:\n\n{notices}",
+    "fo_escalation_template": "FoGuard incident at {timestamp}: {corridor} obstructed, and FoGuard's route verifier found NO passable route from {origin} to {destination}. The delivery is on hold until a corridor is cleared.\n\nPlease use Fo to send the two notices drafted below, marking the facilities one urgent:\n1. The \"Facilities notice\" to the facilities team: {facilities}\n2. The \"Recipient notice\" to the recipient at {destination}: {recipient}\n\nSend each notice only to the contact listed for it, using the channel given (email, text or call). If a contact says \"not provided\", don't send that notice; ask me for the contact instead.\n\nDrafted notices:\n\n{notices}",
     "not_provided": "not provided"
   },
   "recorded_run": {
     "model": "claude-opus-5-5",
-    "recorded_at": "2026-10-18T19:18:21+00:00",
+    "recorded_at": "2026-10-18T21:53:18+00:00",
     "incident": {
       "event": "OBSTRUCTION_DETECTED",
       "blocked_corridor": [
@@ -262,14 +324,16 @@ window.FOGUARD = {
       ],
       "origin": "A",
       "destination": "F",
-      "timestamp": "2026-10-18T19:18:21+00:00"
+      "timestamp": "2026-10-18T21:53:18+00:00"
     },
     "log": [
-      "[agent] claude-opus-5-5 handling the incident (Fo not attached: notices will be drafts)",
+      "[agent] claude-opus-5-5 handling the incident (notices will be drafts for Fo)",
       "  -> get_workspace_topology()",
       "  <- topology: blocked corridors [['B', 'C']]",
+      "  [Claude's reasoning] Checking path options, A-D-E-F totals 38, which beats the alternative route through C at 44, so 38 is the shortest path avoiding B-C.",
       "  -> propose_recovery_route({\"origin\": \"A\", \"destination\": \"F\", \"proposed_path\": [\"A\", \"D\", \"E\", \"F\"]})",
-      "  <- APPROVED A-D-E-F (38 m)"
+      "  <- APPROVED A-D-E-F (38 m)",
+      "  [Claude's reasoning] The old route was probably A-B-C-F at around 30 minutes, so this one adds 8 extra minutes."
     ],
     "approved_route": {
       "approved": true,
@@ -299,7 +363,7 @@ window.FOGUARD = {
         "total_distance_m": 38.0
       }
     ],
-    "final_text": "The robot's new route has been approved: **A → D → E → F**, which is **38.0 m**. It avoids the blocked B–C corridor. The other options were longer: A → B → D → E → F is 39 m and A → D → E → C → F is 44 m. The normal route, A → B → C → F, was 30 m, so this adds about 8 m.\n\nNo messaging tools are connected, so the two notices below are drafts and haven't been sent.\n\n---\n\n### Facilities notice\n\n**Subject: Please clear the blocked corridor B–C (Corridor North ↔ Assembly Bay)**\n\nFoGuard found an obstruction at 2026-10-18 19:18:21 UTC in the corridor between **B (Corridor North)** and **C (Assembly Bay)**. This 12 m corridor is now impassable in both directions.\n\nPlease inspect and clear it as soon as you can. Until then, delivery robots are being rerouted. The current delivery from A (Dispatch) to F (Delivery Station) is taking the approved route **A → D → E → F** (Dispatch → Corridor South → Storage Room → Delivery Station, 38.0 m). Please let us know when B–C is clear so normal routing can resume.\n\n---\n\n### Recipient notice\n\n**Subject: Your delivery to the Delivery Station (F) is being rerouted**\n\nA corridor on the robot's normal route is blocked, so your delivery from Dispatch is taking another way. The new route is **Dispatch (A) → Corridor South (D) → Storage Room (E) → Delivery Station (F)**, which is **38.0 m**. That's about 8 m longer than usual, so it may arrive a little late. You don't need to do anything, and we're sorry for the delay."
+    "final_text": "FoGuard has approved a new route around the blocked corridor: **A → D → E → F, 38.0 m**. That's Dispatch → Corridor South → Storage Room → Delivery Station.\n\nThe only blocked section is the corridor between B (Corridor North) and C (Assembly Bay). No locations are blocked. This is the shortest route that avoids it. The next best option, A → D → E → C → F, is 44 m. With the corridor blocked, there's now no usable route through Corridor North.\n\n---\n\n### Facilities notice\n**Subject: Obstruction in corridor B–C (Corridor North ↔ Assembly Bay)**\n\nHi Facilities team,\n\nFoGuard detected an obstruction at 21:53 UTC on 2026-10-18 in the corridor between **B (Corridor North) and C (Assembly Bay)**. The corridor is 12 m long and is closed to robots in both directions.\n\nPlease inspect and clear the corridor, then confirm when it's open again so FoGuard can be updated.\n\nUntil then, robots going from A (Dispatch) to F (Delivery Station) will use the approved route **A → D → E → F (38.0 m)**, via Corridor South and the Storage Room. Please expect extra robot traffic in those areas.\n\nThanks,\nFoGuard Incident Recovery\n\n---\n\n### Recipient notice\n**Subject: Your delivery to the Delivery Station is being rerouted**\n\nHello,\n\nA corridor obstruction has blocked the usual route, so your delivery from Dispatch is taking a different path to the **Delivery Station (F)**.\n\nThe robot's approved route is **Dispatch → Corridor South → Storage Room → Delivery Station (38.0 m)**. Your delivery is on its way but may be slightly delayed. We'll let you know if anything else changes.\n\nThank you for your patience,\nFoGuard Incident Recovery"
   },
   "recovery_prompt": {
     "template": "FoGuard incident: an obstruction was detected on corridor {from_id} <-> {to_id} at {timestamp}, and the facility graph now marks it impassable in both directions. A delivery is in progress from {origin} to {destination}. {reroute_line}\n\nFirst confirm the reroute with the FoGuard tools: call get_workspace_topology, then propose_recovery_route from {origin} to {destination}, and retry until it is approved.\n\nThen use Fo to start recovery: notify the facilities team that corridor {from_id} <-> {to_id} is obstructed and needs to be cleared, and let the recipient at {destination} know the delivery is being rerouted and may be delayed. Ask me before sending if you need contact details.\n\nIncident record: {incident_json}",
@@ -309,6 +373,1087 @@ window.FOGUARD = {
   "mcp": {
     "public_url": "https://catalog-jimmy-canyon.ngrok-free.dev/mcp",
     "local_url": "http://127.0.0.1:8000/mcp"
+  },
+  "diagnostics": {
+    "suite": "FoGuard deterministic routing",
+    "scenarios": [
+      {
+        "id": 1,
+        "name": "Classic Reroute",
+        "description": "Block B <-> C. The normal route A-B-C-F is cut, so A -> F must reroute through the bypass.",
+        "blocked": [
+          [
+            "B",
+            "C"
+          ]
+        ],
+        "origin": "A",
+        "destination": "F",
+        "expect": {
+          "valid": true,
+          "path": [
+            "A",
+            "D",
+            "E",
+            "F"
+          ],
+          "total_distance": 38.0
+        }
+      },
+      {
+        "id": 2,
+        "name": "Cross-Link Test",
+        "description": "Block B <-> C and A <-> D. Both the normal route and the bypass entrance are cut, so A -> F must use the B <-> D cross-link.",
+        "blocked": [
+          [
+            "B",
+            "C"
+          ],
+          [
+            "A",
+            "D"
+          ]
+        ],
+        "origin": "A",
+        "destination": "F",
+        "expect": {
+          "valid": true,
+          "path": [
+            "A",
+            "B",
+            "D",
+            "E",
+            "F"
+          ],
+          "total_distance": 39.0
+        }
+      },
+      {
+        "id": 3,
+        "name": "Short Trip",
+        "description": "Block C <-> E. B -> E can't go via C, so it takes the B <-> D cross-link.",
+        "blocked": [
+          [
+            "C",
+            "E"
+          ]
+        ],
+        "origin": "B",
+        "destination": "E",
+        "expect": {
+          "valid": true,
+          "path": [
+            "B",
+            "D",
+            "E"
+          ],
+          "total_distance": 20.0
+        }
+      },
+      {
+        "id": 4,
+        "name": "Impossible Route",
+        "description": "Block C <-> F and E <-> F, F's only two corridors. No route to F exists, and the verifier must say so rather than invent one.",
+        "blocked": [
+          [
+            "C",
+            "F"
+          ],
+          [
+            "E",
+            "F"
+          ]
+        ],
+        "origin": "A",
+        "destination": "F",
+        "expect": {
+          "valid": false
+        }
+      },
+      {
+        "id": 5,
+        "name": "Clear Path",
+        "description": "Unblock everything. D -> C takes the shortest immediate path over the cross-link.",
+        "blocked": [],
+        "origin": "D",
+        "destination": "C",
+        "expect": {
+          "valid": true,
+          "path": [
+            "D",
+            "B",
+            "C"
+          ],
+          "total_distance": 18.0
+        }
+      }
+    ]
+  },
+  "scenario_runs": {
+    "recorded_at": "2026-10-18T21:49:07+00:00",
+    "model": "claude-opus-5-5",
+    "runs": [
+      {
+        "scenario": {
+          "id": 1,
+          "name": "Classic Reroute",
+          "description": "Block B <-> C. The normal route A-B-C-F is cut, so A -> F must reroute through the bypass.",
+          "blocked": [
+            [
+              "B",
+              "C"
+            ]
+          ],
+          "origin": "A",
+          "destination": "F",
+          "expect": {
+            "valid": true,
+            "path": [
+              "A",
+              "D",
+              "E",
+              "F"
+            ],
+            "total_distance": 38.0
+          }
+        },
+        "incident": {
+          "event": "OBSTRUCTION_DETECTED",
+          "scenario": "Classic Reroute",
+          "blocked_corridors": [
+            [
+              "B",
+              "C"
+            ]
+          ],
+          "blocked_corridor": [
+            "B",
+            "C"
+          ],
+          "origin": "A",
+          "destination": "F",
+          "timestamp": "2026-10-18T21:48:03+00:00"
+        },
+        "route_options": {
+          "origin": "A",
+          "destination": "F",
+          "options": [
+            {
+              "path": [
+                "A",
+                "D",
+                "E",
+                "F"
+              ],
+              "valid": true,
+              "total_distance": 38.0,
+              "reason": null
+            },
+            {
+              "path": [
+                "A",
+                "B",
+                "D",
+                "E",
+                "F"
+              ],
+              "valid": true,
+              "total_distance": 39.0,
+              "reason": null
+            },
+            {
+              "path": [
+                "A",
+                "D",
+                "E",
+                "C",
+                "F"
+              ],
+              "valid": true,
+              "total_distance": 44.0,
+              "reason": null
+            },
+            {
+              "path": [
+                "A",
+                "B",
+                "D",
+                "E",
+                "C",
+                "F"
+              ],
+              "valid": true,
+              "total_distance": 45.0,
+              "reason": null
+            },
+            {
+              "path": [
+                "A",
+                "B",
+                "C",
+                "F"
+              ],
+              "valid": false,
+              "total_distance": null,
+              "reason": "Path blocked: Segment B -> C is currently impassable."
+            },
+            {
+              "path": [
+                "A",
+                "D",
+                "B",
+                "C",
+                "F"
+              ],
+              "valid": false,
+              "total_distance": null,
+              "reason": "Path blocked: Segment B -> C is currently impassable."
+            },
+            {
+              "path": [
+                "A",
+                "B",
+                "C",
+                "E",
+                "F"
+              ],
+              "valid": false,
+              "total_distance": null,
+              "reason": "Path blocked: Segment B -> C is currently impassable."
+            },
+            {
+              "path": [
+                "A",
+                "D",
+                "B",
+                "C",
+                "E",
+                "F"
+              ],
+              "valid": false,
+              "total_distance": null,
+              "reason": "Path blocked: Segment B -> C is currently impassable."
+            }
+          ],
+          "chosen": {
+            "valid": true,
+            "path": [
+              "A",
+              "D",
+              "E",
+              "F"
+            ],
+            "total_distance": 38.0
+          }
+        },
+        "matches_expected": true,
+        "agent": {
+          "model": "claude-opus-5-5",
+          "approved_route": {
+            "approved": true,
+            "route": [
+              "A",
+              "D",
+              "E",
+              "F"
+            ],
+            "total_distance_m": 38.0
+          },
+          "proposals": [
+            {
+              "path": [
+                "A",
+                "D",
+                "E",
+                "F"
+              ],
+              "approved": true,
+              "route": [
+                "A",
+                "D",
+                "E",
+                "F"
+              ],
+              "total_distance_m": 38.0
+            }
+          ],
+          "transcript": [
+            {
+              "type": "tool_use",
+              "tool": "get_workspace_topology",
+              "input": {}
+            },
+            {
+              "type": "tool_result",
+              "tool": "get_workspace_topology",
+              "summary": "blocked corridors [['B', 'C']]"
+            },
+            {
+              "type": "thinking",
+              "text": "Comparing routes: A-D-E-F gives 38, A-B-D-E-F gives 39, and A-D-E-C-F gives 44, so A-D-E-F at 38 is the shortest."
+            },
+            {
+              "type": "tool_use",
+              "tool": "propose_recovery_route",
+              "input": {
+                "origin": "A",
+                "destination": "F",
+                "proposed_path": [
+                  "A",
+                  "D",
+                  "E",
+                  "F"
+                ]
+              }
+            },
+            {
+              "type": "tool_result",
+              "tool": "propose_recovery_route",
+              "approved": true,
+              "summary": "APPROVED A-D-E-F (38 m)"
+            },
+            {
+              "type": "thinking",
+              "text": "The original route probably went A-B-C-F totaling 30 minutes, which means this adds an extra 8 minutes of delay."
+            }
+          ],
+          "final_text": "I found a new route around the blockage and FoGuard approved it. The robot can go **A (Dispatch) → D (Corridor South) → E (Storage Room) → F (Delivery Station)**, which is **38.0 m**.\n\nThe corridor between B (Corridor North) and C (Assembly Bay) is blocked, and nothing else is. Of the other open routes, A → B → D → E → F is the next shortest at 39 m, and A → D → E → C → F is 44 m. With B–C open, the shortest route would be A → B → C → F at 30 m, so this detour adds 8 m.\n\nNo messaging tools are connected, so the two notices below are drafts for you to send.\n\n---\n\n### Facilities notice\n\n**Subject: Please clear the blocked corridor B–C (Corridor North ↔ Assembly Bay)**\n\nHi Facilities team,\n\nAt 21:48:03 UTC on 2026-10-18, FoGuard reported something blocking the corridor between **B (Corridor North)** and **C (Assembly Bay)**. Robots can't use this corridor in either direction until it's cleared.\n\nTo keep things moving, the delivery from A (Dispatch) to F (Delivery Station) now goes A → D → E → F (38.0 m). Please inspect and clear the B–C corridor as soon as you can, and let us know when it's done so FoGuard can mark it open again.\n\nThanks,\nFoGuard Incident Recovery\n\n---\n\n### Recipient notice\n\n**Subject: Your delivery to the Delivery Station is being rerouted**\n\nHello,\n\nA blocked corridor in the facility means your delivery from Dispatch is taking a different route to the **Delivery Station (F)**:\n\n**Dispatch (A) → Corridor South (D) → Storage Room (E) → Delivery Station (F)**, 38.0 m in total.\n\nThis route is a little longer than usual, so your delivery may arrive slightly later than planned. You don't need to do anything. Sorry for the inconvenience.\n\nThanks,\nFoGuard Incident Recovery",
+          "agrees_with_verifier": true
+        },
+        "agent_skipped": null
+      },
+      {
+        "scenario": {
+          "id": 2,
+          "name": "Cross-Link Test",
+          "description": "Block B <-> C and A <-> D. Both the normal route and the bypass entrance are cut, so A -> F must use the B <-> D cross-link.",
+          "blocked": [
+            [
+              "B",
+              "C"
+            ],
+            [
+              "A",
+              "D"
+            ]
+          ],
+          "origin": "A",
+          "destination": "F",
+          "expect": {
+            "valid": true,
+            "path": [
+              "A",
+              "B",
+              "D",
+              "E",
+              "F"
+            ],
+            "total_distance": 39.0
+          }
+        },
+        "incident": {
+          "event": "OBSTRUCTION_DETECTED",
+          "scenario": "Cross-Link Test",
+          "blocked_corridors": [
+            [
+              "B",
+              "C"
+            ],
+            [
+              "A",
+              "D"
+            ]
+          ],
+          "blocked_corridor": [
+            "B",
+            "C"
+          ],
+          "origin": "A",
+          "destination": "F",
+          "timestamp": "2026-10-18T21:48:20+00:00"
+        },
+        "route_options": {
+          "origin": "A",
+          "destination": "F",
+          "options": [
+            {
+              "path": [
+                "A",
+                "B",
+                "D",
+                "E",
+                "F"
+              ],
+              "valid": true,
+              "total_distance": 39.0,
+              "reason": null
+            },
+            {
+              "path": [
+                "A",
+                "B",
+                "D",
+                "E",
+                "C",
+                "F"
+              ],
+              "valid": true,
+              "total_distance": 45.0,
+              "reason": null
+            },
+            {
+              "path": [
+                "A",
+                "D",
+                "E",
+                "F"
+              ],
+              "valid": false,
+              "total_distance": null,
+              "reason": "Path blocked: Segment A -> D is currently impassable."
+            },
+            {
+              "path": [
+                "A",
+                "B",
+                "C",
+                "F"
+              ],
+              "valid": false,
+              "total_distance": null,
+              "reason": "Path blocked: Segment B -> C is currently impassable."
+            },
+            {
+              "path": [
+                "A",
+                "D",
+                "E",
+                "C",
+                "F"
+              ],
+              "valid": false,
+              "total_distance": null,
+              "reason": "Path blocked: Segment A -> D is currently impassable."
+            },
+            {
+              "path": [
+                "A",
+                "D",
+                "B",
+                "C",
+                "F"
+              ],
+              "valid": false,
+              "total_distance": null,
+              "reason": "Path blocked: Segment A -> D is currently impassable."
+            },
+            {
+              "path": [
+                "A",
+                "B",
+                "C",
+                "E",
+                "F"
+              ],
+              "valid": false,
+              "total_distance": null,
+              "reason": "Path blocked: Segment B -> C is currently impassable."
+            },
+            {
+              "path": [
+                "A",
+                "D",
+                "B",
+                "C",
+                "E",
+                "F"
+              ],
+              "valid": false,
+              "total_distance": null,
+              "reason": "Path blocked: Segment A -> D is currently impassable."
+            }
+          ],
+          "chosen": {
+            "valid": true,
+            "path": [
+              "A",
+              "B",
+              "D",
+              "E",
+              "F"
+            ],
+            "total_distance": 39.0
+          }
+        },
+        "matches_expected": true,
+        "agent": {
+          "model": "claude-opus-5-5",
+          "approved_route": {
+            "approved": true,
+            "route": [
+              "A",
+              "B",
+              "D",
+              "E",
+              "F"
+            ],
+            "total_distance_m": 39.0
+          },
+          "proposals": [
+            {
+              "path": [
+                "A",
+                "B",
+                "D",
+                "E",
+                "F"
+              ],
+              "approved": true,
+              "route": [
+                "A",
+                "B",
+                "D",
+                "E",
+                "F"
+              ],
+              "total_distance_m": 39.0
+            }
+          ],
+          "transcript": [
+            {
+              "type": "tool_use",
+              "tool": "get_workspace_topology",
+              "input": {}
+            },
+            {
+              "type": "tool_result",
+              "tool": "get_workspace_topology",
+              "summary": "blocked corridors [['A', 'D'], ['B', 'C']]"
+            },
+            {
+              "type": "thinking",
+              "text": "Checking path A-B-D-E-F gives 39, while the alternative through C totals 45 — so 39 is the better route."
+            },
+            {
+              "type": "tool_use",
+              "tool": "propose_recovery_route",
+              "input": {
+                "origin": "A",
+                "destination": "F",
+                "proposed_path": [
+                  "A",
+                  "B",
+                  "D",
+                  "E",
+                  "F"
+                ]
+              }
+            },
+            {
+              "type": "tool_result",
+              "tool": "propose_recovery_route",
+              "approved": true,
+              "summary": "APPROVED A-B-D-E-F (39 m)"
+            },
+            {
+              "type": "thinking",
+              "text": "The report uses both \"blocked_corridors\" and \"blocked_corridor\" as field names, and the graph confirms both are indeed blocked—worth noting that inconsistency."
+            }
+          ],
+          "final_text": "I found a new route and FoGuard approved it: **A → B → D → E → F, 39 m in total.**\n\n- **Blocked corridors:** The incident report lists two blocked corridors, A–D and B–C, and the facility map confirms both. The report's single \"blocked_corridor\" field only names B–C, but A–D is also impassable. I avoided both.\n- **The route:** Dispatch (A) → Corridor North (B), 10 m → Corridor South (D), 6 m → Storage Room (E), 14 m → Delivery Station (F), 9 m.\n- **Why this one:** The only other way through is A → B → D → E → C → F, which is 45 m. With the A–D shortcut closed, every route has to go via B and then D.\n\n---\n\n### Facilities notice\n\n**Subject: Two corridors blocked, please clear (reported 2026-10-18 21:48 UTC)**\n\nHi Facilities team,\n\nFoGuard has found obstructions in two corridors:\n- **B–C** (Corridor North ↔ Assembly Bay)\n- **A–D** (Dispatch ↔ Corridor South)\n\nPlease inspect and clear both as soon as you can. In the meantime, deliveries from Dispatch (A) to the Delivery Station (F) are going A → B → D → E → F (39 m). That puts all traffic onto the B–D and D–E corridors, so please keep those clear too. Let us know once the blockages are cleared so we can switch back to normal routing.\n\nThanks,\nFoGuard Incident Recovery\n\n---\n\n### Recipient notice\n\n**Subject: Your delivery is being rerouted and may be slightly delayed**\n\nHello,\n\nA corridor blockage means your delivery from Dispatch to the Delivery Station is taking a different route: Dispatch → Corridor North → Corridor South → Storage Room → Delivery Station (39 m). It's still on its way but may arrive a little later than planned. We'll let you know if anything else changes.\n\nThank you for your patience,\nFoGuard Incident Recovery",
+          "agrees_with_verifier": true
+        },
+        "agent_skipped": null
+      },
+      {
+        "scenario": {
+          "id": 3,
+          "name": "Short Trip",
+          "description": "Block C <-> E. B -> E can't go via C, so it takes the B <-> D cross-link.",
+          "blocked": [
+            [
+              "C",
+              "E"
+            ]
+          ],
+          "origin": "B",
+          "destination": "E",
+          "expect": {
+            "valid": true,
+            "path": [
+              "B",
+              "D",
+              "E"
+            ],
+            "total_distance": 20.0
+          }
+        },
+        "incident": {
+          "event": "OBSTRUCTION_DETECTED",
+          "scenario": "Short Trip",
+          "blocked_corridors": [
+            [
+              "C",
+              "E"
+            ]
+          ],
+          "blocked_corridor": [
+            "C",
+            "E"
+          ],
+          "origin": "B",
+          "destination": "E",
+          "timestamp": "2026-10-18T21:48:33+00:00"
+        },
+        "route_options": {
+          "origin": "B",
+          "destination": "E",
+          "options": [
+            {
+              "path": [
+                "B",
+                "D",
+                "E"
+              ],
+              "valid": true,
+              "total_distance": 20.0,
+              "reason": null
+            },
+            {
+              "path": [
+                "B",
+                "C",
+                "F",
+                "E"
+              ],
+              "valid": true,
+              "total_distance": 29.0,
+              "reason": null
+            },
+            {
+              "path": [
+                "B",
+                "A",
+                "D",
+                "E"
+              ],
+              "valid": true,
+              "total_distance": 39.0,
+              "reason": null
+            },
+            {
+              "path": [
+                "B",
+                "C",
+                "E"
+              ],
+              "valid": false,
+              "total_distance": null,
+              "reason": "Path blocked: Segment C -> E is currently impassable."
+            }
+          ],
+          "chosen": {
+            "valid": true,
+            "path": [
+              "B",
+              "D",
+              "E"
+            ],
+            "total_distance": 20.0
+          }
+        },
+        "matches_expected": true,
+        "agent": {
+          "model": "claude-opus-5-5",
+          "approved_route": {
+            "approved": true,
+            "route": [
+              "B",
+              "D",
+              "E"
+            ],
+            "total_distance_m": 20.0
+          },
+          "proposals": [
+            {
+              "path": [
+                "B",
+                "D",
+                "E"
+              ],
+              "approved": true,
+              "route": [
+                "B",
+                "D",
+                "E"
+              ],
+              "total_distance_m": 20.0
+            }
+          ],
+          "transcript": [
+            {
+              "type": "tool_use",
+              "tool": "get_workspace_topology",
+              "input": {}
+            },
+            {
+              "type": "tool_result",
+              "tool": "get_workspace_topology",
+              "summary": "blocked corridors [['C', 'E']]"
+            },
+            {
+              "type": "thinking",
+              "text": "For B to E, checking paths: B-D-E gives 20, B-C-F-E gives 29, B-A-D-E gives 39, so the shortest is 20."
+            },
+            {
+              "type": "tool_use",
+              "tool": "propose_recovery_route",
+              "input": {
+                "origin": "B",
+                "destination": "E",
+                "proposed_path": [
+                  "B",
+                  "D",
+                  "E"
+                ]
+              }
+            },
+            {
+              "type": "tool_result",
+              "tool": "propose_recovery_route",
+              "approved": true,
+              "summary": "APPROVED B-D-E (20 m)"
+            },
+            {
+              "type": "thinking",
+              "text": "The normal B-C-E route would total 19m, so the new route adds just 1 extra minute."
+            }
+          ],
+          "final_text": "I've found a new route for the robot and FoGuard approved it: **B → D → E**, which is **20 m** long. It avoids the blocked corridor between C and E.\n\n- **Alternatives:** B → C → F → E is 29 m, and B → A → D → E is 39 m. No other location is blocked.\n- **Delay:** the route through the blocked corridor (B → C → E) would have been 19 m, so the new one is only 1 m longer. Any delay should be small.\n\n---\n\n### Facilities notice\n**Subject: Please clear the blocked corridor C–E (Assembly Bay ↔ Storage Room)**\n\nAt 21:48 UTC on 2026-10-18, FoGuard detected an obstruction in the corridor between C (Assembly Bay) and E (Storage Room). The corridor is marked impassable in both directions. Please inspect it, clear the obstruction and confirm in FoGuard when it's open again.\n\nThe current delivery is going another way: B (Corridor North) → D (Corridor South) → E (Storage Room), 20 m. Until C–E is cleared, any deliveries that would normally use it will be sent another way.\n\n### Recipient notice\n**Subject: Your delivery to the Storage Room is being rerouted**\n\nHello,\n\nA corridor on the robot's planned path is blocked, so your delivery is taking a different route: Corridor North (B) → Corridor South (D) → Storage Room (E), 20 m in total. The new route is about the same length, so any delay should be short. We'll let you know if anything else changes.\n\nThank you for your patience.",
+          "agrees_with_verifier": true
+        },
+        "agent_skipped": null
+      },
+      {
+        "scenario": {
+          "id": 4,
+          "name": "Impossible Route",
+          "description": "Block C <-> F and E <-> F, F's only two corridors. No route to F exists, and the verifier must say so rather than invent one.",
+          "blocked": [
+            [
+              "C",
+              "F"
+            ],
+            [
+              "E",
+              "F"
+            ]
+          ],
+          "origin": "A",
+          "destination": "F",
+          "expect": {
+            "valid": false
+          }
+        },
+        "incident": {
+          "event": "OBSTRUCTION_DETECTED",
+          "scenario": "Impossible Route",
+          "blocked_corridors": [
+            [
+              "C",
+              "F"
+            ],
+            [
+              "E",
+              "F"
+            ]
+          ],
+          "blocked_corridor": [
+            "C",
+            "F"
+          ],
+          "origin": "A",
+          "destination": "F",
+          "timestamp": "2026-10-18T21:48:48+00:00"
+        },
+        "route_options": {
+          "origin": "A",
+          "destination": "F",
+          "options": [
+            {
+              "path": [
+                "A",
+                "D",
+                "E",
+                "F"
+              ],
+              "valid": false,
+              "total_distance": null,
+              "reason": "Path blocked: Segment E -> F is currently impassable."
+            },
+            {
+              "path": [
+                "A",
+                "B",
+                "C",
+                "F"
+              ],
+              "valid": false,
+              "total_distance": null,
+              "reason": "Path blocked: Segment C -> F is currently impassable."
+            },
+            {
+              "path": [
+                "A",
+                "D",
+                "E",
+                "C",
+                "F"
+              ],
+              "valid": false,
+              "total_distance": null,
+              "reason": "Path blocked: Segment C -> F is currently impassable."
+            },
+            {
+              "path": [
+                "A",
+                "D",
+                "B",
+                "C",
+                "F"
+              ],
+              "valid": false,
+              "total_distance": null,
+              "reason": "Path blocked: Segment C -> F is currently impassable."
+            },
+            {
+              "path": [
+                "A",
+                "B",
+                "D",
+                "E",
+                "F"
+              ],
+              "valid": false,
+              "total_distance": null,
+              "reason": "Path blocked: Segment E -> F is currently impassable."
+            },
+            {
+              "path": [
+                "A",
+                "B",
+                "C",
+                "E",
+                "F"
+              ],
+              "valid": false,
+              "total_distance": null,
+              "reason": "Path blocked: Segment E -> F is currently impassable."
+            },
+            {
+              "path": [
+                "A",
+                "D",
+                "B",
+                "C",
+                "E",
+                "F"
+              ],
+              "valid": false,
+              "total_distance": null,
+              "reason": "Path blocked: Segment E -> F is currently impassable."
+            },
+            {
+              "path": [
+                "A",
+                "B",
+                "D",
+                "E",
+                "C",
+                "F"
+              ],
+              "valid": false,
+              "total_distance": null,
+              "reason": "Path blocked: Segment C -> F is currently impassable."
+            }
+          ],
+          "chosen": {
+            "valid": false,
+            "reason": "No passable route from A to F."
+          }
+        },
+        "matches_expected": true,
+        "agent": {
+          "model": "claude-opus-5-5",
+          "approved_route": null,
+          "proposals": [
+            {
+              "path": [
+                "A",
+                "B",
+                "C",
+                "F"
+              ],
+              "approved": false,
+              "reason": "Path blocked: Segment C -> F is currently impassable."
+            },
+            {
+              "path": [
+                "A",
+                "D",
+                "E",
+                "F"
+              ],
+              "approved": false,
+              "reason": "Path blocked: Segment E -> F is currently impassable."
+            }
+          ],
+          "transcript": [
+            {
+              "type": "tool_use",
+              "tool": "get_workspace_topology",
+              "input": {}
+            },
+            {
+              "type": "tool_result",
+              "tool": "get_workspace_topology",
+              "summary": "blocked corridors [['C', 'F'], ['E', 'F']]"
+            },
+            {
+              "type": "thinking",
+              "text": "F is a dead end since both its connections, C-F and E-F, are blocked. Since every route I find gets rejected, I should propose the two closest-to-viable paths in parallel to confirm there's truly no way through—A-B-C-F and A-D-E-F—and compare their costs to see which corridor would be most efficient to clear."
+            },
+            {
+              "type": "tool_use",
+              "tool": "propose_recovery_route",
+              "input": {
+                "origin": "A",
+                "destination": "F",
+                "proposed_path": [
+                  "A",
+                  "B",
+                  "C",
+                  "F"
+                ]
+              }
+            },
+            {
+              "type": "tool_use",
+              "tool": "propose_recovery_route",
+              "input": {
+                "origin": "A",
+                "destination": "F",
+                "proposed_path": [
+                  "A",
+                  "D",
+                  "E",
+                  "F"
+                ]
+              }
+            },
+            {
+              "type": "tool_result",
+              "tool": "propose_recovery_route",
+              "approved": false,
+              "summary": "REJECTED A-B-C-F: Path blocked: Segment C -> F is currently impassable."
+            },
+            {
+              "type": "tool_result",
+              "tool": "propose_recovery_route",
+              "approved": false,
+              "summary": "REJECTED A-D-E-F: Path blocked: Segment E -> F is currently impassable."
+            },
+            {
+              "type": "thinking",
+              "text": "Ready to put together the final answer now."
+            }
+          ],
+          "final_text": "No route from A (Dispatch) to F (Delivery Station) is open right now, so I haven't proposed a reroute.\n\nF connects to the rest of the facility through only two corridors, and both are blocked:\n- **C–F** (Assembly Bay to Delivery Station, 8 m)\n- **E–F** (Storage Room to Delivery Station, 9 m)\n\nI submitted the shortest route through each corridor to FoGuard, and it rejected both:\n- A → B → C → F: rejected because \"Segment C -> F is currently impassable.\"\n- A → D → E → F: rejected because \"Segment E -> F is currently impassable.\"\n\nEvery other part of the facility (A, B, C, D, E) can still be reached, and no locations are blocked. Clearing **C–F** first would restore the shortest route, A → B → C → F at 30 m. Clearing only E–F would allow A → D → E → F or A → B → C → E → F, both 38 m.\n\n---\n\n### Facilities notice\n**URGENT: Delivery Station (F) cannot be reached**\nTime: 2026-10-18 21:48 UTC\nBoth corridors into the Delivery Station are blocked: **C–F** (Assembly Bay ↔ Delivery Station) and **E–F** (Storage Room ↔ Delivery Station). Robots have no way into F until one is cleared. Please clear **C–F first**, since that restores the shortest route (A → B → C → F, 30 m). If C–F can't be cleared quickly, clearing E–F restores a 38 m route. Deliveries to F are on hold until then. Please confirm when either corridor is clear.\n\n### Recipient notice\n**Your delivery is on hold**\nYour delivery from Dispatch to the Delivery Station (F) is paused because both corridors into the Delivery Station are blocked, and there's currently no other way in. The facilities team has been asked to clear them urgently. Your delivery will go out as soon as a corridor reopens, and we'll update you with the new route and arrival time then. Sorry for the delay.",
+          "agrees_with_verifier": true
+        },
+        "agent_skipped": null
+      },
+      {
+        "scenario": {
+          "id": 5,
+          "name": "Clear Path",
+          "description": "Unblock everything. D -> C takes the shortest immediate path over the cross-link.",
+          "blocked": [],
+          "origin": "D",
+          "destination": "C",
+          "expect": {
+            "valid": true,
+            "path": [
+              "D",
+              "B",
+              "C"
+            ],
+            "total_distance": 18.0
+          }
+        },
+        "incident": null,
+        "route_options": {
+          "origin": "D",
+          "destination": "C",
+          "options": [
+            {
+              "path": [
+                "D",
+                "B",
+                "C"
+              ],
+              "valid": true,
+              "total_distance": 18.0,
+              "reason": null
+            },
+            {
+              "path": [
+                "D",
+                "E",
+                "C"
+              ],
+              "valid": true,
+              "total_distance": 21.0,
+              "reason": null
+            },
+            {
+              "path": [
+                "D",
+                "E",
+                "F",
+                "C"
+              ],
+              "valid": true,
+              "total_distance": 31.0,
+              "reason": null
+            },
+            {
+              "path": [
+                "D",
+                "A",
+                "B",
+                "C"
+              ],
+              "valid": true,
+              "total_distance": 37.0,
+              "reason": null
+            }
+          ],
+          "chosen": {
+            "valid": true,
+            "path": [
+              "D",
+              "B",
+              "C"
+            ],
+            "total_distance": 18.0
+          }
+        },
+        "matches_expected": true,
+        "agent": null,
+        "agent_skipped": "no incident"
+      }
+    ]
   },
   "feed": {
     "open": "./demo_assets/img_2.jpg",

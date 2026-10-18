@@ -41,17 +41,26 @@ When an obstruction is reported:
 corridor and location, and submit it with propose_recovery_route. If it is rejected, read the \
 reason, fix the path and propose again. Never state a route that propose_recovery_route has \
 not approved.
-3. Write two short notices: one asking the facilities team to clear the blocked corridor, and \
-one telling the recipient at the destination that the delivery is being rerouted and may be \
-delayed. Include the approved route and its distance."""
+3. Write two short notices: one asking the facilities team to clear the blocked corridor(s), \
+and one telling the recipient at the destination that the delivery is being rerouted and may be \
+delayed. Include the approved route and its distance.
+
+If every route you can find is rejected and the graph shows no passable route at all, don't \
+invent one: say so plainly, and write the notices instead as an urgent request to facilities \
+naming the corridor(s) to clear to restore access, and a message to the recipient that the \
+delivery is on hold."""
 
 DRAFT_INSTRUCTIONS = """
 4. No messaging tools are connected. Finish with the two notices as drafts under the headings \
 "Facilities notice" and "Recipient notice"."""
 
+# Claude's reasoning comes back as readable summaries (the raw chain of
+# thought is never returned), so a run shows how Claude reached its answer.
+THINKING = {"type": "adaptive", "display": "summarized"}
+
 # The prompt pasted into Claude Web, where Fo sends the notices. The dashboard
-# fills the same template in the browser (exported through data.js).
-FO_PROMPT_TEMPLATE = """FoGuard incident at {timestamp}: corridor {corridor} is obstructed. FoGuard's \
+# fills the same templates in the browser (exported through data.js).
+FO_PROMPT_TEMPLATE = """FoGuard incident at {timestamp}: {corridor} obstructed. FoGuard's \
 route verifier approved the reroute {route} ({distance} m) for the delivery from {origin} \
 to {destination}.
 
@@ -66,7 +75,33 @@ Drafted notices:
 
 {notices}"""
 
+# Used when no passable route exists: hold the delivery and escalate.
+FO_ESCALATION_TEMPLATE = """FoGuard incident at {timestamp}: {corridor} obstructed, and FoGuard's \
+route verifier found NO passable route from {origin} to {destination}. The delivery is on hold \
+until a corridor is cleared.
+
+Please use Fo to send the two notices drafted below, marking the facilities one urgent:
+1. The "Facilities notice" to the facilities team: {facilities}
+2. The "Recipient notice" to the recipient at {destination}: {recipient}
+
+Send each notice only to the contact listed for it, using the channel given (email, text or \
+call). If a contact says "not provided", don't send that notice; ask me for the contact instead.
+
+Drafted notices:
+
+{notices}"""
+
 NOT_PROVIDED = "not provided"
+
+
+def blocked_corridors(incident: dict) -> list[list[str]]:
+    """An incident may name one blocked corridor or several."""
+    return incident.get("blocked_corridors") or [incident["blocked_corridor"]]
+
+
+def describe_corridors(incident: dict) -> str:
+    pairs = [" <-> ".join(c) for c in blocked_corridors(incident)]
+    return ("corridor " if len(pairs) == 1 else "corridors ") + " and ".join(pairs)
 
 
 def browser_agent_config() -> dict:
@@ -81,7 +116,9 @@ def browser_agent_config() -> dict:
         "tools": [{"name": spec.name, "description": spec.description,
                    "input_schema": spec.input_schema, "strict": True}
                   for spec in (_TOPOLOGY_SPEC, _ROUTE_SPEC)],
+        "thinking": THINKING,
         "fo_prompt_template": FO_PROMPT_TEMPLATE,
+        "fo_escalation_template": FO_ESCALATION_TEMPLATE,
         "not_provided": NOT_PROVIDED,
     }
 
@@ -90,37 +127,45 @@ def build_fo_prompt(incident: dict, outcome: dict,
                     facilities: str | None = None, recipient: str | None = None) -> str:
     """The prompt to paste into Claude Web so Fo sends the drafted notices.
 
-    Contacts default to FACILITIES_CONTACT / RECIPIENT_CONTACT from .env.
+    Contacts default to FACILITIES_CONTACT / RECIPIENT_CONTACT from .env. With
+    no approved route it's the hold-and-escalate version instead.
     """
     route = outcome["approved_route"]
-    return FO_PROMPT_TEMPLATE.format(
+    values = dict(
         timestamp=incident["timestamp"],
-        corridor=" <-> ".join(incident["blocked_corridor"]),
-        route=" -> ".join(route["route"]),
-        distance=f"{route['total_distance_m']:g}",
+        corridor=describe_corridors(incident),
         origin=incident["origin"],
         destination=incident["destination"],
         facilities=facilities or os.getenv("FACILITIES_CONTACT") or NOT_PROVIDED,
         recipient=recipient or os.getenv("RECIPIENT_CONTACT") or NOT_PROVIDED,
         notices=outcome["final_text"],
     )
+    if not route:
+        return FO_ESCALATION_TEMPLATE.format(**values)
+    return FO_PROMPT_TEMPLATE.format(route=" -> ".join(route["route"]),
+                                     distance=f"{route['total_distance_m']:g}", **values)
 
 
 def run_recovery(incident: dict, verbose: bool = True) -> dict:
     """Have Claude find and verify a reroute for the incident and draft the notices.
 
     Returns the route the verifier actually approved, taken from the tool calls
-    rather than from Claude's text, plus Claude's final message (the drafts).
+    rather than from Claude's text, Claude's final message (the drafts), and a
+    transcript: Claude's summarized reasoning, each tool call and each result,
+    in order.
     """
     log = print if verbose else (lambda *a, **k: None)
     approved = {}
     proposals = []
+    transcript = []
 
     @beta_tool(name=_TOPOLOGY_SPEC.name, description=_TOPOLOGY_SPEC.description,
                input_schema=_TOPOLOGY_SPEC.input_schema, strict=True)
     def get_workspace_topology() -> str:
         result = tools.get_workspace_topology()
-        log(f"  <- topology: blocked corridors {result['blocked_corridors']}")
+        summary = f"blocked corridors {result['blocked_corridors']}"
+        log(f"  <- topology: {summary}")
+        transcript.append({"type": "tool_result", "tool": "get_workspace_topology", "summary": summary})
         return json.dumps(result)
 
     @beta_tool(name=_ROUTE_SPEC.name, description=_ROUTE_SPEC.description,
@@ -130,9 +175,12 @@ def run_recovery(incident: dict, verbose: bool = True) -> dict:
         proposals.append({"path": proposed_path, **result})
         if result["approved"]:
             approved.update(result)
-            log(f"  <- APPROVED {'-'.join(result['route'])} ({result['total_distance_m']:g} m)")
+            summary = f"APPROVED {'-'.join(result['route'])} ({result['total_distance_m']:g} m)"
         else:
-            log(f"  <- REJECTED {'-'.join(proposed_path)}: {result['reason']}")
+            summary = f"REJECTED {'-'.join(proposed_path)}: {result['reason']}"
+        log(f"  <- {summary}")
+        transcript.append({"type": "tool_result", "tool": "propose_recovery_route",
+                           "approved": result["approved"], "summary": summary})
         return json.dumps(result)
 
     client = anthropic.Anthropic()
@@ -145,6 +193,7 @@ def run_recovery(incident: dict, verbose: bool = True) -> dict:
         tools=[get_workspace_topology, propose_recovery_route],
         messages=[{"role": "user", "content":
                    f"FoGuard incident report:\n{json.dumps(incident, indent=2)}"}],
+        thinking=THINKING,
         output_config={"effort": "medium"},
         betas=["server-side-fallback-2026-07-01"],
         fallbacks="default",
@@ -153,8 +202,14 @@ def run_recovery(incident: dict, verbose: bool = True) -> dict:
     for message in runner:
         last = message
         for block in message.content:
-            if block.type == "tool_use":
-                log(f"  -> {block.name}({json.dumps(block.input) if block.input else ''})")
+            if block.type == "thinking" and block.thinking.strip():
+                text = block.thinking.strip()
+                log("  [Claude's reasoning] " + text.replace("\n", "\n      "))
+                transcript.append({"type": "thinking", "text": text})
+            elif block.type == "tool_use":
+                call = f"{block.name}({json.dumps(block.input) if block.input else ''})"
+                log(f"  -> {call}")
+                transcript.append({"type": "tool_use", "tool": block.name, "input": block.input or {}})
 
     if last is None:
         raise RuntimeError("The recovery agent returned no response.")
@@ -165,6 +220,7 @@ def run_recovery(incident: dict, verbose: bool = True) -> dict:
     return {
         "approved_route": approved or None,
         "proposals": proposals,
+        "transcript": transcript,
         "final_text": final_text,
     }
 

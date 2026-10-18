@@ -22,12 +22,14 @@ sys.path.insert(0, str(ROOT))
 from graph.init_db import CORRIDORS, LOCATIONS  # noqa: E402
 from mcp_server import LOCAL_MCP_URL, PUBLIC_MCP_URL  # noqa: E402
 from recovery_agent import browser_agent_config  # noqa: E402
+from tests.test_routing import SCENARIOS, SUITE_NAME  # noqa: E402
 from vision.trigger_node import (  # noqa: E402
     BLOCKED_CORRIDOR_IMAGE, DESTINATION, MONITORED_CORRIDOR, OPEN_CORRIDOR_IMAGE, ORIGIN,
     RECOVERY_PROMPT_TEMPLATE, REROUTE_FOUND, REROUTE_NONE)
 
 FEATURES = ROOT / "docs" / "features.json"
 RECORDED_RUN = ROOT / "docs" / "recorded_run.json"  # from scripts/record_agent_run.py
+SCENARIO_RUNS = ROOT / "docs" / "scenario_runs.json"  # from scenario_pipeline.py
 OUTPUT = ROOT / "docs" / "data.js"
 WEB_ASSETS = ROOT / "docs" / "demo_assets"
 WEB_IMAGE_WIDTH = 1280
@@ -74,6 +76,10 @@ def build() -> str:
         "recovery_prompt": {"template": RECOVERY_PROMPT_TEMPLATE,
                             "reroute_found": REROUTE_FOUND, "reroute_none": REROUTE_NONE},
         "mcp": {"public_url": PUBLIC_MCP_URL, "local_url": LOCAL_MCP_URL},
+        # The page runs these same scenarios itself when no server is reachable.
+        "diagnostics": {"suite": SUITE_NAME, "scenarios": SCENARIOS},
+        "scenario_runs": (json.loads(SCENARIO_RUNS.read_text(encoding="utf-8"))
+                          if SCENARIO_RUNS.exists() else None),
         "feed": {state: (f"./demo_assets/{web_image_path(src).name}" if src.is_file() else None)
                  for state, src in FEED_IMAGES.items()},
         "facility": {

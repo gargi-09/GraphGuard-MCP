@@ -138,7 +138,15 @@ def init_db(reset: bool = False) -> kuzu.Connection:
         close_db()
         _remove_db_files()
 
-    conn = get_connection()
+    return seed_graph(get_connection())
+
+
+def seed_graph(conn: kuzu.Connection) -> kuzu.Connection:
+    """Create the schema and the waypoints/corridors on any connection.
+
+    Separate from init_db so tests can seed a throwaway database with exactly
+    the same layout (tests/test_routing.py).
+    """
     for ddl in SCHEMA:
         conn.execute(ddl)
 
@@ -160,17 +168,19 @@ def init_db(reset: bool = False) -> kuzu.Connection:
     return conn
 
 
-def mark_edge_blocked(from_id: str, to_id: str, blocked: bool = True) -> bool:
+def mark_edge_blocked(from_id: str, to_id: str, blocked: bool = True,
+                      conn: kuzu.Connection | None = None) -> bool:
     """Set is_blocked on the corridor between from_id and to_id.
 
     An obstructed corridor is impassable both ways, so the edge in each
-    direction is updated. Returns False if no such edge exists.
+    direction is updated. Returns False if no such edge exists. conn defaults
+    to the shared connection to data/kuzu_db.
     """
     # Equivalent to an undirected -[r]- match, but Kuzu 0.11.3 hits an
     # internal assertion (csr_node_group.cpp, KU_UNREACHABLE) when SETting a
     # rel property through an undirected pattern, so match both orientations
     # of a directed pattern instead.
-    result = get_connection().execute(
+    result = (conn or get_connection()).execute(
         "MATCH (a:Location)-[r:CONNECTED_TO]->(b:Location) "
         "WHERE (a.id = $from_id AND b.id = $to_id) "
         "OR (a.id = $to_id AND b.id = $from_id) "

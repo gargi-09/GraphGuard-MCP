@@ -8,7 +8,7 @@ import contextlib
 import sys
 import threading
 
-from graph.init_db import close_db, get_topology, init_db, mark_edge_blocked
+from graph.init_db import CORRIDORS, close_db, get_topology, init_db, mark_edge_blocked
 from graph.verifier import RouteVerifier
 
 # Serializes every database open in this process. Public so code that opens
@@ -99,3 +99,41 @@ def reset_graph():
         close_db()
         init_db(reset=True)
         close_db()
+
+
+def candidate_paths(origin: str, destination: str) -> list[list[str]]:
+    """Every simple path between two waypoints on the physical map, ignoring blocks."""
+    neighbours = {}
+    for a, b, _ in CORRIDORS:
+        neighbours.setdefault(a, []).append(b)
+        neighbours.setdefault(b, []).append(a)
+    paths, stack = [], [[origin]]
+    while stack:
+        path = stack.pop()
+        if path[-1] == destination:
+            paths.append(path)
+            continue
+        for nxt in sorted(neighbours.get(path[-1], [])):
+            if nxt not in path:
+                stack.append(path + [nxt])
+    return paths
+
+
+def route_options(origin: str, destination: str) -> dict:
+    """The verifier's reasoning made visible: every candidate route and its verdict.
+
+    Each path that exists on the physical map is run through the same
+    verify_route guardrail an agent's proposal goes through. Valid routes are
+    ranked by distance; rejected ones keep the verifier's exact reason.
+    """
+    with _graph():
+        verifier = RouteVerifier()
+        options = []
+        for path in candidate_paths(origin, destination):
+            verdict = verifier.verify_route(path)
+            options.append({"path": path, "valid": verdict["valid"],
+                            "total_distance": verdict.get("total_distance"),
+                            "reason": verdict.get("reason")})
+        shortest = verifier.find_shortest_valid_route(origin, destination)
+    options.sort(key=lambda o: (not o["valid"], o["total_distance"] or 0, len(o["path"])))
+    return {"origin": origin, "destination": destination, "options": options, "chosen": shortest}

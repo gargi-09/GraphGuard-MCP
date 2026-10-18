@@ -31,6 +31,7 @@ from graph import tools
 from mcp_server import LOCAL_MCP_URL, PUBLIC_MCP_URL
 from graph.init_db import DB_PATH, LOCATIONS, cloud_sync_folder
 from recovery_agent import MODEL, build_fo_prompt, run_recovery
+from tests.test_routing import run_all_tests
 from vision.trigger_node import MONITORED_CORRIDOR, build_recovery_prompt, report_obstruction
 
 load_dotenv()
@@ -172,6 +173,12 @@ def agent(body: AgentRequest):
                                  body.recipient_contact or None)
                  if outcome["approved_route"] else None)
     return {"incident": incident, "log": log.getvalue(), "fo_prompt": fo_prompt, **outcome}
+
+
+@app.get("/api/run_diagnostics")
+def diagnostics():
+    """The same routing suite as the MCP server's /run_diagnostics (tests/test_routing.py)."""
+    return run_all_tests()
 
 
 @app.get("/api/mcp")

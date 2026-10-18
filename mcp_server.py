@@ -11,13 +11,19 @@ exact failure reason back and can retry.
 Over HTTP the server also answers browser requests (CORS) from the GitHub
 Pages dashboard and localhost, so the dashboard can call the tools directly.
 Extra origins: DASHBOARD_ORIGIN in .env (comma-separated) or --cors-origin.
-Both tools only read the graph, so allowing a browser origin exposes nothing
-that Claude Web can't already see.
+Both MCP tools only read the graph. Three plain HTTP routes serve the dashboard:
+    GET  /run_diagnostics   the routing suite (tests/test_routing.py), on a throwaway graph
+    POST /trigger_anomaly   block the monitored corridor, as the edge node would
+    POST /clear_anomaly     clear it again
+Those two writes are the only changes possible through the public URL.
 """
 import argparse
+import contextlib
+import io
 import os
 import sys
 
+import anyio
 import uvicorn
 from dotenv import load_dotenv
 from fastapi.middleware.cors import CORSMiddleware
@@ -25,8 +31,14 @@ from mcp.server.mcpserver import MCPServer
 from mcp.server.transport_security import TransportSecuritySettings
 from mcp.types import ToolAnnotations
 
+from starlette.requests import Request
+from starlette.responses import JSONResponse
+
+from graph import tools
 from graph.init_db import cloud_sync_folder, DB_PATH
 from graph.tools import get_workspace_topology, propose_recovery_route
+from tests.test_routing import run_all_tests
+from vision.trigger_node import MONITORED_CORRIDOR, build_recovery_prompt, report_obstruction
 
 load_dotenv()
 
@@ -54,6 +66,42 @@ server = MCPServer(
 _read_only = ToolAnnotations(read_only_hint=True, open_world_hint=False)
 server.tool(annotations=_read_only)(get_workspace_topology)
 server.tool(annotations=_read_only)(propose_recovery_route)
+
+
+# Plain HTTP routes next to /mcp, for the dashboard (not MCP tools, so Claude
+# Web never sees them). The blocking work runs in a thread so MCP calls on the
+# event loop aren't held up.
+
+@server.custom_route("/run_diagnostics", methods=["GET"])
+async def run_diagnostics(request: Request) -> JSONResponse:
+    """The 5-scenario routing suite from tests/test_routing.py, on a throwaway graph."""
+    return JSONResponse(await anyio.to_thread.run_sync(run_all_tests))
+
+
+def _trigger_anomaly() -> dict:
+    with tools.graph_lock, contextlib.redirect_stdout(io.StringIO()):
+        incident = report_obstruction(print_card=False)
+    reroute = tools.shortest_route(incident["origin"], incident["destination"])
+    return {"incident": incident, "reroute": reroute,
+            "prompt": build_recovery_prompt(incident, reroute),
+            "topology": get_workspace_topology()}
+
+
+# The only two writes reachable over the public URL, deliberately narrow:
+# block or clear the monitored corridor, exactly what the edge node itself does.
+@server.custom_route("/trigger_anomaly", methods=["POST"])
+async def trigger_anomaly(request: Request) -> JSONResponse:
+    """Simulate the edge node's obstruction report on the monitored corridor."""
+    return JSONResponse(await anyio.to_thread.run_sync(_trigger_anomaly))
+
+
+@server.custom_route("/clear_anomaly", methods=["POST"])
+async def clear_anomaly(request: Request) -> JSONResponse:
+    """Clear the monitored corridor again."""
+    def clear():
+        tools.set_corridor_blocked(*MONITORED_CORRIDOR, False)
+        return {"topology": get_workspace_topology()}
+    return JSONResponse(await anyio.to_thread.run_sync(clear))
 
 
 def main():
