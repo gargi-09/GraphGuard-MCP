@@ -123,6 +123,7 @@ window.FOGUARD = {
         "Only reads the graph: an agent can look and get routes checked, but can't change anything.",
         "Answers browser requests (CORS) from the GitHub Pages site and localhost, so 'Check public' and Live edge mode call it straight from the page. Every request sends ngrok-skip-browser-warning so ngrok's free tier doesn't return its warning page.",
         "Also serves three plain HTTP routes for the dashboard: GET /run_diagnostics (the routing suite), and POST /trigger_anomaly and /clear_anomaly, the only changes possible over the public URL (block or clear the monitored corridor).",
+        "If one of those routes fails (for example the database is locked by another process), it answers with a JSON error the dashboard can show, instead of a crash the browser would report as 'can't reach the server'.",
         "Live edge mode re-reads the graph every 3 seconds: run the trigger on the edge laptop and the map, route and camera feed here update within a few seconds.",
         "Opens the database only for each call, so the trigger node and demo can update the graph while it runs."
       ],
@@ -209,6 +210,10 @@ window.FOGUARD = {
   "changelog": [
     {
       "date": "2026-10-18",
+      "text": "Polish pass: dashboard HTTP routes always answer with a readable JSON error, clearer MCP tool descriptions (call topology first, both tools read-only), and docstrings across the graph and verifier modules."
+    },
+    {
+      "date": "2026-10-18",
       "text": "Scenario runs: all five routing scenarios through the full pipeline, with the verifier's route-by-route reasoning, Claude's reasoning, and per-scenario Fo prompts (including hold-and-escalate)."
     },
     {
@@ -262,7 +267,7 @@ window.FOGUARD = {
     "tools": [
       {
         "name": "get_workspace_topology",
-        "description": "Return the facility layout: every location, every corridor with its length\n\nin metres, and which corridors and locations are currently blocked.\n\nCorridors are two-way; a blocked corridor is impassable in both directions.",
+        "description": "Return the facility layout: every location, every corridor with its length\n\nin metres, and which corridors and locations are currently blocked.\n\nCall this first, before planning any route. Corridors are two-way; a\nblocked corridor is impassable in both directions. Locations not joined by\na corridor are not connected. Read-only: it changes nothing.",
         "input_schema": {
           "additionalProperties": false,
           "properties": {},
@@ -272,7 +277,7 @@ window.FOGUARD = {
       },
       {
         "name": "propose_recovery_route",
-        "description": "Check a proposed route against the live facility graph.\n\nEach consecutive pair in proposed_path must be joined by an unblocked\ncorridor. Returns approved=true with the route and its total distance, or\napproved=false with the exact reason so the path can be fixed.",
+        "description": "Check a proposed route against the live facility graph.\n\nEach consecutive pair in proposed_path must be joined by an unblocked\ncorridor. Returns approved=true with the route and its total distance, or\napproved=false with the exact reason so the path can be fixed. Only an\napproved route may be reported to the user. Read-only: it checks the route\nand moves nothing.",
         "input_schema": {
           "additionalProperties": false,
           "properties": {
@@ -315,7 +320,7 @@ window.FOGUARD = {
   },
   "recorded_run": {
     "model": "claude-opus-5-5",
-    "recorded_at": "2026-10-18T21:53:18+00:00",
+    "recorded_at": "2026-10-18T22:15:31+00:00",
     "incident": {
       "event": "OBSTRUCTION_DETECTED",
       "blocked_corridor": [
@@ -324,16 +329,16 @@ window.FOGUARD = {
       ],
       "origin": "A",
       "destination": "F",
-      "timestamp": "2026-10-18T21:53:18+00:00"
+      "timestamp": "2026-10-18T22:15:31+00:00"
     },
     "log": [
       "[agent] claude-opus-5-5 handling the incident (notices will be drafts for Fo)",
       "  -> get_workspace_topology()",
       "  <- topology: blocked corridors [['B', 'C']]",
-      "  [Claude's reasoning] Checking path options, A-D-E-F totals 38, which beats the alternative route through C at 44, so 38 is the shortest path avoiding B-C.",
+      "  [Claude's reasoning] Comparing paths avoiding B-C, I find A-D at 15 beats A-B-D's 16, then D-E adds 14 to reach 29, and the fastest finish is E-F direct at 9 rather than routing through C, giving a total of 38 for A-D-E-F.",
       "  -> propose_recovery_route({\"origin\": \"A\", \"destination\": \"F\", \"proposed_path\": [\"A\", \"D\", \"E\", \"F\"]})",
       "  <- APPROVED A-D-E-F (38 m)",
-      "  [Claude's reasoning] The old route was probably A-B-C-F at around 30 minutes, so this one adds 8 extra minutes."
+      "  [Claude's reasoning] The original shortest path A-B-C-F was 30 m, but now it's 38 m — an increase of 8 m."
     ],
     "approved_route": {
       "approved": true,
@@ -363,7 +368,7 @@ window.FOGUARD = {
         "total_distance_m": 38.0
       }
     ],
-    "final_text": "FoGuard has approved a new route around the blocked corridor: **A → D → E → F, 38.0 m**. That's Dispatch → Corridor South → Storage Room → Delivery Station.\n\nThe only blocked section is the corridor between B (Corridor North) and C (Assembly Bay). No locations are blocked. This is the shortest route that avoids it. The next best option, A → D → E → C → F, is 44 m. With the corridor blocked, there's now no usable route through Corridor North.\n\n---\n\n### Facilities notice\n**Subject: Obstruction in corridor B–C (Corridor North ↔ Assembly Bay)**\n\nHi Facilities team,\n\nFoGuard detected an obstruction at 21:53 UTC on 2026-10-18 in the corridor between **B (Corridor North) and C (Assembly Bay)**. The corridor is 12 m long and is closed to robots in both directions.\n\nPlease inspect and clear the corridor, then confirm when it's open again so FoGuard can be updated.\n\nUntil then, robots going from A (Dispatch) to F (Delivery Station) will use the approved route **A → D → E → F (38.0 m)**, via Corridor South and the Storage Room. Please expect extra robot traffic in those areas.\n\nThanks,\nFoGuard Incident Recovery\n\n---\n\n### Recipient notice\n**Subject: Your delivery to the Delivery Station is being rerouted**\n\nHello,\n\nA corridor obstruction has blocked the usual route, so your delivery from Dispatch is taking a different path to the **Delivery Station (F)**.\n\nThe robot's approved route is **Dispatch → Corridor South → Storage Room → Delivery Station (38.0 m)**. Your delivery is on its way but may be slightly delayed. We'll let you know if anything else changes.\n\nThank you for your patience,\nFoGuard Incident Recovery"
+    "final_text": "The robot is being rerouted from A (Dispatch) to F (Delivery Station) via **A → D → E → F**, a total of **38 m**. FoGuard approved this route.\n\n- **What's blocked:** the corridor between B (Corridor North) and C (Assembly Bay). No locations are blocked.\n- **Why this route:** it's the shortest one that avoids the blocked corridor. The next-best option, A → B → D → E → F, is 1 m longer.\n- **Impact:** the usual route, A → B → C → F, is 30 m, so the detour adds 8 m.\n\n---\n\n**Facilities notice**\n\nSubject: Obstruction in corridor B–C (Corridor North ↔ Assembly Bay)\n\nAt 2026-10-18 22:15:31 UTC, FoGuard detected an obstruction in the corridor between B (Corridor North) and C (Assembly Bay). That corridor is currently closed to robots. Please inspect and clear it as soon as possible, then confirm so it can be reopened in FoGuard.\n\nUntil then, the delivery from A (Dispatch) to F (Delivery Station) is using A → D → E → F (38 m). Please keep corridors A–D, D–E and E–F clear.\n\n---\n\n**Recipient notice**\n\nSubject: Your delivery to Delivery Station (F) is being rerouted\n\nAn obstruction between Corridor North and Assembly Bay has closed the robot's normal route, so your delivery from Dispatch has been rerouted. It will now travel Dispatch (A) → Corridor South (D) → Storage Room (E) → Delivery Station (F), a total of 38 m. That's 8 m further than usual, so it may arrive a little later than expected. No action is needed from you, and we'll let you know if anything else changes."
   },
   "recovery_prompt": {
     "template": "FoGuard incident: an obstruction was detected on corridor {from_id} <-> {to_id} at {timestamp}, and the facility graph now marks it impassable in both directions. A delivery is in progress from {origin} to {destination}. {reroute_line}\n\nFirst confirm the reroute with the FoGuard tools: call get_workspace_topology, then propose_recovery_route from {origin} to {destination}, and retry until it is approved.\n\nThen use Fo to start recovery: notify the facilities team that corridor {from_id} <-> {to_id} is obstructed and needs to be cleared, and let the recipient at {destination} know the delivery is being rerouted and may be delayed. Ask me before sending if you need contact details.\n\nIncident record: {incident_json}",

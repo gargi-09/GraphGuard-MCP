@@ -72,13 +72,29 @@ server.tool(annotations=_read_only)(propose_recovery_route)
 # Web never sees them). The blocking work runs in a thread so MCP calls on the
 # event loop aren't held up.
 
+async def _json_from_thread(work) -> JSONResponse:
+    """Run blocking work in a thread and always answer with JSON.
+
+    An uncaught exception would become Starlette's plain-text 500, sent without
+    CORS headers, so the browser would report a network failure instead of the
+    real cause (e.g. the database locked by another process). The dashboard
+    shows the "detail" field of an error response.
+    """
+    try:
+        return JSONResponse(await anyio.to_thread.run_sync(work))
+    except Exception as e:
+        print(f"[mcp_server] {work.__name__} failed: {e!r}", file=sys.stderr)
+        return JSONResponse({"detail": str(e) or type(e).__name__}, status_code=500)
+
+
 @server.custom_route("/run_diagnostics", methods=["GET"])
 async def run_diagnostics(request: Request) -> JSONResponse:
     """The 5-scenario routing suite from tests/test_routing.py, on a throwaway graph."""
-    return JSONResponse(await anyio.to_thread.run_sync(run_all_tests))
+    return await _json_from_thread(run_all_tests)
 
 
 def _trigger_anomaly() -> dict:
+    """Block the monitored corridor and return the incident, reroute and agent prompt."""
     with tools.graph_lock, contextlib.redirect_stdout(io.StringIO()):
         incident = report_obstruction(print_card=False)
     reroute = tools.shortest_route(incident["origin"], incident["destination"])
@@ -92,7 +108,7 @@ def _trigger_anomaly() -> dict:
 @server.custom_route("/trigger_anomaly", methods=["POST"])
 async def trigger_anomaly(request: Request) -> JSONResponse:
     """Simulate the edge node's obstruction report on the monitored corridor."""
-    return JSONResponse(await anyio.to_thread.run_sync(_trigger_anomaly))
+    return await _json_from_thread(_trigger_anomaly)
 
 
 @server.custom_route("/clear_anomaly", methods=["POST"])
@@ -101,10 +117,11 @@ async def clear_anomaly(request: Request) -> JSONResponse:
     def clear():
         tools.set_corridor_blocked(*MONITORED_CORRIDOR, False)
         return {"topology": get_workspace_topology()}
-    return JSONResponse(await anyio.to_thread.run_sync(clear))
+    return await _json_from_thread(clear)
 
 
 def main():
+    """Parse the CLI flags and serve over stdio, or HTTP with CORS when --http is given."""
     parser = argparse.ArgumentParser(description=__doc__,
                                      formatter_class=argparse.RawDescriptionHelpFormatter)
     parser.add_argument("--http", action="store_true",

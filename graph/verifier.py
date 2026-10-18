@@ -1,3 +1,4 @@
+"""RouteVerifier: the deterministic guardrail every proposed route must pass."""
 import heapq
 
 import kuzu
@@ -18,12 +19,13 @@ class RouteVerifier:
     a route is only approved if each hop is a real, currently passable edge.
     """
 
-    def __init__(self, conn: kuzu.Connection = None):
+    def __init__(self, conn: kuzu.Connection | None = None):
         # Shares init_db's connection by default: Kuzu allows only one
         # read-write Database per file, so a second one would fail to lock.
         self.conn = conn or get_connection()
 
     def _location_states(self) -> dict:
+        """Map every location ID to its is_blocked flag."""
         return {
             loc_id: is_blocked
             for loc_id, is_blocked in _rows(self.conn.execute(
@@ -32,6 +34,12 @@ class RouteVerifier:
         }
 
     def verify_route(self, proposed_route: list[str]) -> dict:
+        """Check a route hop by hop against the live graph.
+
+        Returns {"valid": True, "path", "total_distance"}, or
+        {"valid": False, "reason"} naming the first unknown location,
+        missing corridor or blocked segment.
+        """
         if (
             not isinstance(proposed_route, list)
             or not proposed_route

@@ -31,7 +31,9 @@ def get_workspace_topology() -> dict:
     """Return the facility layout: every location, every corridor with its length
     in metres, and which corridors and locations are currently blocked.
 
-    Corridors are two-way; a blocked corridor is impassable in both directions.
+    Call this first, before planning any route. Corridors are two-way; a
+    blocked corridor is impassable in both directions. Locations not joined by
+    a corridor are not connected. Read-only: it changes nothing.
     """
     with _graph():
         topology = get_topology()
@@ -58,7 +60,9 @@ def propose_recovery_route(origin: str, destination: str, proposed_path: list[st
 
     Each consecutive pair in proposed_path must be joined by an unblocked
     corridor. Returns approved=true with the route and its total distance, or
-    approved=false with the exact reason so the path can be fixed.
+    approved=false with the exact reason so the path can be fixed. Only an
+    approved route may be reported to the user. Read-only: it checks the route
+    and moves nothing.
 
     Args:
         origin: Location ID the route starts from, e.g. "A".

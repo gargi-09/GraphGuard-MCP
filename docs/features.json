@@ -121,6 +121,7 @@
         "Only reads the graph: an agent can look and get routes checked, but can't change anything.",
         "Answers browser requests (CORS) from the GitHub Pages site and localhost, so 'Check public' and Live edge mode call it straight from the page. Every request sends ngrok-skip-browser-warning so ngrok's free tier doesn't return its warning page.",
         "Also serves three plain HTTP routes for the dashboard: GET /run_diagnostics (the routing suite), and POST /trigger_anomaly and /clear_anomaly, the only changes possible over the public URL (block or clear the monitored corridor).",
+        "If one of those routes fails (for example the database is locked by another process), it answers with a JSON error the dashboard can show, instead of a crash the browser would report as 'can't reach the server'.",
         "Live edge mode re-reads the graph every 3 seconds: run the trigger on the edge laptop and the map, route and camera feed here update within a few seconds.",
         "Opens the database only for each call, so the trigger node and demo can update the graph while it runs."
       ],
@@ -205,6 +206,10 @@
     }
   ],
   "changelog": [
+    {
+      "date": "2026-10-18",
+      "text": "Polish pass: dashboard HTTP routes always answer with a readable JSON error, clearer MCP tool descriptions (call topology first, both tools read-only), and docstrings across the graph and verifier modules."
+    },
     {
       "date": "2026-10-18",
       "text": "Scenario runs: all five routing scenarios through the full pipeline, with the verifier's route-by-route reasoning, Claude's reasoning, and per-scenario Fo prompts (including hold-and-escalate)."

@@ -1,3 +1,7 @@
+"""Kuzu facility graph: schema, seed layout (waypoints A-F) and block/unblock helpers.
+
+    python graph/init_db.py    # rebuild data/kuzu_db and self-check it
+"""
 import os
 import shutil
 from pathlib import Path
@@ -52,6 +56,7 @@ _conn = None
 
 
 def _rows(result) -> list:
+    """Drain a Kuzu query result into a list of rows."""
     rows = []
     while result.has_next():
         rows.append(result.get_next())
@@ -69,6 +74,7 @@ def _remove_db_files():
 
 
 def _open() -> kuzu.Connection:
+    """Open data/kuzu_db, rebuilding it if it is from an old Kuzu version or unreadable."""
     global _db, _conn
     DB_PATH.parent.mkdir(parents=True, exist_ok=True)
 
@@ -116,6 +122,7 @@ def cloud_sync_folder(path: Path = DB_PATH):
 
 
 def close_db():
+    """Close the shared connection and database so other processes can open the file."""
     global _db, _conn
     if _conn is not None:
         _conn.close()
@@ -125,6 +132,7 @@ def close_db():
 
 
 def get_connection() -> kuzu.Connection:
+    """Return the shared connection, opening the database on first use."""
     return _conn if _conn is not None else _open()
 
 
