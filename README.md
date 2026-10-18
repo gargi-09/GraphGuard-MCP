@@ -47,8 +47,10 @@ DASHBOARD_ORIGIN=         # optional: your GitHub Pages origin, see below
 The dashboard is a static page in `docs/`. **It works on its own on GitHub Pages; nothing needs to run on your computer.**
 
 - **Browser mode (default).** The facility graph, route verifier, shortest-route search, mock trigger and demo steps run as JavaScript in the page, generated from the Python seed data. `scripts/check_sim_parity.py` checks them against the real Python verifier for all 256 combinations of blocked corridors.
+- **Edge Vision Node Feed.** Shows the corridor camera view from `demo_assets/` (open aisle, then fallen boxes). **Trigger Anomaly** swaps the image, blocks the corridor in the graph, recalculates the route and generates the Claude Web prompt. The build script copies web-sized versions of the images into `docs/demo_assets/`, because GitHub Pages only serves `docs/`.
 - **Claude recovery agent, in the page.** Paste an Anthropic API key and the page calls the Claude API directly (official SDK, `dangerouslyAllowBrowser`), with Claude's tools running against the in-page graph. The key goes only to `api.anthropic.com` and is kept only if you tick *Remember*, in that browser's local storage. Visitors without a key can click **Replay a recorded run** to watch a real run captured by `scripts/record_agent_run.py`.
-- **Local server mode (optional).** Drives the real Python code and Kùzu database through `api_server.py`. It's only needed to check the MCP server or to attach Fo.
+- **Live edge (MCP) mode.** The page reads the real graph on the edge laptop straight from the MCP server's public ngrok URL, every 3 seconds, read-only. Run the trigger on the laptop (e.g. `python -m vision.trigger_node --visual-demo`) and the map, reroute and camera feed on the public site update by themselves. Needs `mcp_server.py --http` and ngrok running. The MCP server allows browser calls from `https://gargi-09.github.io` and localhost; add other origins with `DASHBOARD_ORIGIN` in `.env` or `--cors-origin`.
+- **Local server mode (optional).** Drives the real Python code and Kùzu database through `api_server.py`. It's needed only to change the real graph from the page or to run the demo against the real database.
 
 ### Deploy to GitHub Pages
 
@@ -75,7 +77,7 @@ python scripts/build_dashboard.py
 python scripts/check_sim_parity.py
 ```
 
-The first regenerates `docs/data.js` (features, graph seed data, the browser agent's prompt and tools, and the recorded run); `--check` reports whether it's stale. The second confirms the in-browser simulation still matches Python (needs Node.js). To refresh the recorded agent run, run `python scripts/record_agent_run.py` (spends a little API credit), then rebuild.
+The first regenerates `docs/data.js` (features, graph seed data, the browser agent's prompt and tools, the recovery prompt templates, and the recorded run) and the web copies of the feed images in `docs/demo_assets/`; `--check` reports whether it's stale. The second confirms the in-browser simulation still matches Python (needs Node.js). To refresh the recorded agent run, run `python scripts/record_agent_run.py` (spends a little API credit), then rebuild.
 
 ## Presentation mode
 

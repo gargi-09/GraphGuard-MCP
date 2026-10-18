@@ -50,6 +50,7 @@ window.FOGUARD = {
       "how_it_works": [
         "--mock simulates an obstruction instantly, with no camera or GPU.",
         "--visual-demo is the presentation mode for judges: it shows a simulated camera feed of the open corridor for 3 seconds, swaps to the blocked corridor (boxes fallen) for 2 seconds, then blocks the corridor in the graph and prints the incident. The images live in demo_assets/; they're displayed, not analyzed.",
+        "On the dashboard, the Edge Vision Node Feed shows the camera view of corridor B ↔ C. 'Trigger Anomaly' simulates boxes falling: the image switches to the blocked aisle, the corridor is blocked in the graph, the route is recalculated, and the Claude Web prompt is generated. The image always follows the graph's state for that corridor.",
         "--webcam runs the DepthAR segmentor on a live camera. It counts as obstructed when people cover more than 35% of the corridor region, or when more than 8% of the region differs from a captured picture of the empty corridor (for boxes and carts).",
         "It only arms after capturing the empty corridor, waits for nobody to be in view before capturing, and needs 3 obstructed readings in a row before raising an incident.",
         "Depth isn't used for the decision: Depth Anything's depth is rescaled every frame, and in testing it went the wrong way when the corridor was blocked."
@@ -60,7 +61,7 @@ window.FOGUARD = {
         "demo_assets/"
       ],
       "run": "python -m vision.trigger_node --mock",
-      "panel": "trigger",
+      "panel": "feed",
       "modes": [
         "browser",
         "local server"
@@ -69,10 +70,12 @@ window.FOGUARD = {
     {
       "id": "mcp",
       "title": "MCP server",
-      "summary": "Exposes the graph to AI agents such as Claude Web through two tools: get_workspace_topology and propose_recovery_route.",
+      "summary": "Exposes the graph to AI agents such as Claude Web through two tools: get_workspace_topology and propose_recovery_route. This dashboard also talks to it directly, so the public site can follow the real graph on the edge laptop.",
       "how_it_works": [
         "Runs over stdio for Claude Desktop/Code, or over HTTP at /mcp for remote connectors (published through ngrok).",
         "Only reads the graph: an agent can look and get routes checked, but can't change anything.",
+        "Answers browser requests (CORS) from the GitHub Pages site and localhost, so 'Check public' and Live edge mode call it straight from the page. Every request sends ngrok-skip-browser-warning so ngrok's free tier doesn't return its warning page.",
+        "Live edge mode re-reads the graph every 3 seconds: run the trigger on the edge laptop and the map, route and camera feed here update within a few seconds.",
         "Opens the database only for each call, so the trigger node and demo can update the graph while it runs."
       ],
       "files": [
@@ -82,6 +85,8 @@ window.FOGUARD = {
       "run": "python mcp_server.py --http --allowed-host YOUR-DOMAIN.ngrok-free.dev",
       "panel": "mcp",
       "modes": [
+        "browser",
+        "live edge (MCP)",
         "local server"
       ]
     },
@@ -134,6 +139,7 @@ window.FOGUARD = {
       "how_it_works": [
         "Browser mode (the default) runs the graph, verifier and mock trigger as JavaScript, generated from the Python seed data and checked against the Python verifier in 2,560 cases.",
         "The Claude agent runs in the page too, with your own API key, or as a replay of a recorded real run.",
+        "Live edge (MCP) mode follows the real graph on the edge laptop through its public MCP server: read-only, refreshed every 3 seconds. Route checks and the Claude agent then use the real graph.",
         "Local server mode is optional: it drives the real Python code and Kùzu database through api_server.py, and is the only way to check the MCP server.",
         "Feature descriptions live in docs/features.json and are rebuilt into docs/data.js by scripts/build_dashboard.py."
       ],
@@ -152,6 +158,14 @@ window.FOGUARD = {
     }
   ],
   "changelog": [
+    {
+      "date": "2026-10-18",
+      "text": "Live edge (MCP) mode: the public dashboard reads the real graph straight from the MCP server through ngrok and follows the edge node live."
+    },
+    {
+      "date": "2026-10-18",
+      "text": "Edge Vision Node Feed panel: the dashboard shows the corridor camera view and a Trigger Anomaly button tied to the real trigger, reroute and prompt."
+    },
     {
       "date": "2026-10-18",
       "text": "Presentation mode: the trigger node and demo can show a simulated camera feed of the corridor going from open to blocked."
@@ -286,6 +300,19 @@ window.FOGUARD = {
       }
     ],
     "final_text": "The robot's new route has been approved: **A → D → E → F**, which is **38.0 m**. It avoids the blocked B–C corridor. The other options were longer: A → B → D → E → F is 39 m and A → D → E → C → F is 44 m. The normal route, A → B → C → F, was 30 m, so this adds about 8 m.\n\nNo messaging tools are connected, so the two notices below are drafts and haven't been sent.\n\n---\n\n### Facilities notice\n\n**Subject: Please clear the blocked corridor B–C (Corridor North ↔ Assembly Bay)**\n\nFoGuard found an obstruction at 2026-10-18 19:18:21 UTC in the corridor between **B (Corridor North)** and **C (Assembly Bay)**. This 12 m corridor is now impassable in both directions.\n\nPlease inspect and clear it as soon as you can. Until then, delivery robots are being rerouted. The current delivery from A (Dispatch) to F (Delivery Station) is taking the approved route **A → D → E → F** (Dispatch → Corridor South → Storage Room → Delivery Station, 38.0 m). Please let us know when B–C is clear so normal routing can resume.\n\n---\n\n### Recipient notice\n\n**Subject: Your delivery to the Delivery Station (F) is being rerouted**\n\nA corridor on the robot's normal route is blocked, so your delivery from Dispatch is taking another way. The new route is **Dispatch (A) → Corridor South (D) → Storage Room (E) → Delivery Station (F)**, which is **38.0 m**. That's about 8 m longer than usual, so it may arrive a little late. You don't need to do anything, and we're sorry for the delay."
+  },
+  "recovery_prompt": {
+    "template": "FoGuard incident: an obstruction was detected on corridor {from_id} <-> {to_id} at {timestamp}, and the facility graph now marks it impassable in both directions. A delivery is in progress from {origin} to {destination}. {reroute_line}\n\nFirst confirm the reroute with the FoGuard tools: call get_workspace_topology, then propose_recovery_route from {origin} to {destination}, and retry until it is approved.\n\nThen use Fo to start recovery: notify the facilities team that corridor {from_id} <-> {to_id} is obstructed and needs to be cleared, and let the recipient at {destination} know the delivery is being rerouted and may be delayed. Ask me before sending if you need contact details.\n\nIncident record: {incident_json}",
+    "reroute_found": "The FoGuard route verifier's shortest passable route is {path} ({distance} m).",
+    "reroute_none": "The FoGuard route verifier found no passable route: {reason}"
+  },
+  "mcp": {
+    "public_url": "https://catalog-jimmy-canyon.ngrok-free.dev/mcp",
+    "local_url": "http://127.0.0.1:8000/mcp"
+  },
+  "feed": {
+    "open": "./demo_assets/img_2.jpg",
+    "blocked": "./demo_assets/img_1.jpg"
   },
   "facility": {
     "locations": [

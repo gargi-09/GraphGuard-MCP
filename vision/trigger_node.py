@@ -103,30 +103,38 @@ def report_obstruction(print_card: bool = True) -> dict:
     return incident
 
 
+# The recovery prompt as templates, so the dashboard can fill in the same text
+# in the browser (exported through docs/data.js).
+RECOVERY_PROMPT_TEMPLATE = (
+    "FoGuard incident: an obstruction was detected on corridor {from_id} <-> {to_id} "
+    "at {timestamp}, and the facility graph now marks it impassable "
+    "in both directions. A delivery is in progress from {origin} to "
+    "{destination}. {reroute_line}\n\n"
+    "First confirm the reroute with the FoGuard tools: call get_workspace_topology, "
+    "then propose_recovery_route from {origin} to "
+    "{destination}, and retry until it is approved.\n\n"
+    "Then use Fo to start recovery: notify the facilities team that corridor "
+    "{from_id} <-> {to_id} is obstructed and needs to be cleared, and let the "
+    "recipient at {destination} know the delivery is being rerouted "
+    "and may be delayed. Ask me before sending if you need contact details.\n\n"
+    "Incident record: {incident_json}"
+)
+REROUTE_FOUND = "The FoGuard route verifier's shortest passable route is {path} ({distance} m)."
+REROUTE_NONE = "The FoGuard route verifier found no passable route: {reason}"
+
+
 def build_recovery_prompt(incident: dict, reroute: dict) -> str:
     """The copy-paste prompt that hands an incident to Claude Web and Fo."""
     from_id, to_id = incident["blocked_corridor"]
     if reroute["valid"]:
-        reroute_line = (f"The FoGuard route verifier's shortest passable route is "
-                        f"{'-'.join(reroute['path'])} ({reroute['total_distance']:g} m).")
+        reroute_line = REROUTE_FOUND.format(path="-".join(reroute["path"]),
+                                            distance=f"{reroute['total_distance']:g}")
     else:
-        reroute_line = f"The FoGuard route verifier found no passable route: {reroute['reason']}"
-
-    prompt = (
-        f"FoGuard incident: an obstruction was detected on corridor {from_id} <-> {to_id} "
-        f"at {incident['timestamp']}, and the facility graph now marks it impassable "
-        f"in both directions. A delivery is in progress from {incident['origin']} to "
-        f"{incident['destination']}. {reroute_line}\n\n"
-        f"First confirm the reroute with the FoGuard tools: call get_workspace_topology, "
-        f"then propose_recovery_route from {incident['origin']} to "
-        f"{incident['destination']}, and retry until it is approved.\n\n"
-        f"Then use Fo to start recovery: notify the facilities team that corridor "
-        f"{from_id} <-> {to_id} is obstructed and needs to be cleared, and let the "
-        f"recipient at {incident['destination']} know the delivery is being rerouted "
-        f"and may be delayed. Ask me before sending if you need contact details.\n\n"
-        f"Incident record: {json.dumps(incident)}"
-    )
-    return prompt
+        reroute_line = REROUTE_NONE.format(reason=reroute["reason"])
+    return RECOVERY_PROMPT_TEMPLATE.format(
+        from_id=from_id, to_id=to_id, timestamp=incident["timestamp"],
+        origin=incident["origin"], destination=incident["destination"],
+        reroute_line=reroute_line, incident_json=json.dumps(incident))
 
 
 def print_recovery_card(incident: dict, reroute: dict):

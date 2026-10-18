@@ -96,6 +96,16 @@ main { padding: 20px 0 48px; }
 .map text { fill: var(--text); font: 600 14px system-ui, sans-serif; }
 .map .dist { fill: var(--muted); font: 12px system-ui, sans-serif; }
 .map .name { fill: var(--muted); font: 11px system-ui, sans-serif; }
+.feed { position: relative; margin: 0; border-radius: 8px; overflow: hidden; background: #000; }
+.feed img { display: block; width: 100%; height: auto; transition: opacity .25s; }
+.feed-bar { position: absolute; inset: 0 0 auto 0; display: flex; justify-content: space-between; align-items: center;
+  gap: 8px; flex-wrap: wrap; padding: 8px 12px; background: rgba(0,0,0,.62); color: #e8eaef;
+  font: 600 12px ui-monospace, Consolas, monospace; letter-spacing: .02em; }
+.feed-status { padding: 3px 10px; border-radius: 999px; font-weight: 700; }
+.feed-status.clear { background: #1f7a3e; color: #fff; }
+.feed-status.blocked { background: #c62f22; color: #fff; animation: pulse 1.2s ease-in-out infinite; }
+@keyframes pulse { 50% { opacity: .65; } }
+@media (prefers-reduced-motion: reduce) { .feed-status.blocked { animation: none; } .feed img { transition: none; } }
 .legend { display: flex; gap: 14px; flex-wrap: wrap; font-size: 12px; color: var(--muted); margin-top: 8px; }
 .legend i { display: inline-block; width: 22px; height: 0; border-top: 3px solid var(--muted); vertical-align: middle; margin-right: 5px; }
 .legend i.b { border-top: 3px dashed var(--bad); }
@@ -115,10 +125,13 @@ footer { color: var(--muted); font-size: 13px; padding: 0 0 32px; }
     <div class="controls">
       <div class="seg" role="group" aria-label="Mode">
         <button id="mode-sim" aria-pressed="true" title="Everything runs in this page; no server needed">Browser</button>
+        <button id="mode-mcp" aria-pressed="false" title="Follow the real graph on the edge laptop through its public MCP server (read-only)">Live edge (MCP)</button>
         <button id="mode-live" aria-pressed="false" title="Drive the real Python code through api_server.py on your computer">Local server</button>
       </div>
       <label class="sr" for="api-url">API server URL</label>
       <input id="api-url" class="mono" size="24" value="http://127.0.0.1:8001" title="Local API server (python api_server.py)" hidden>
+      <label class="sr" for="mcp-url">MCP server URL</label>
+      <input id="mcp-url" class="mono" size="34" title="Public MCP server URL (ngrok), ending in /mcp" hidden>
       <span id="conn" class="pill"><span class="dot"></span>in-browser</span>
       <button id="theme" title="Toggle light/dark">◐</button>
     </div>
@@ -133,6 +146,23 @@ footer { color: var(--muted); font-size: 13px; padding: 0 0 32px; }
     <aside class="features" id="features" aria-label="Implemented features"></aside>
 
     <div class="panels">
+      <section class="card panel" id="panel-feed">
+        <h2>Edge Vision Node Feed <span class="pill">simulated incident</span></h2>
+        <p class="sub">What the camera on corridor <span class="feed-corridor"></span> sees. Press <strong>Trigger Anomaly</strong> to simulate boxes falling: the feed switches, the corridor is blocked in the graph, the route is recalculated, and the Claude prompt is generated. The image always matches the graph: clear the corridor anywhere and the feed clears too.</p>
+        <figure class="feed" id="feed">
+          <img id="feed-img" alt="Camera view of corridor: open aisle" width="1280" height="714">
+          <figcaption class="feed-bar"><span>EDGE NODE · CAM <span class="feed-corridor"></span></span>
+            <span class="feed-status clear" id="feed-status" role="status">Status: CLEAR</span></figcaption>
+        </figure>
+        <p class="notice" id="feed-missing" hidden>The feed images aren't in <code>docs/demo_assets/</code>. Put <code>img_1</code> and <code>img_2</code> in <code>demo_assets/</code> and run <code>python scripts/build_dashboard.py</code>.</p>
+        <div class="row" style="margin-top:12px">
+          <button class="primary" id="feed-trigger">Trigger Anomaly</button>
+          <button id="feed-reset">Reset corridor</button>
+        </div>
+        <div class="result" id="feed-result"></div>
+        <p class="sub" id="feed-next" hidden style="margin-top:8px">The incident JSON and Claude Web prompt are in <a href="#panel-trigger">Vision trigger node</a>; the verified reroute is on the <a href="#panel-graph">map</a>.</p>
+      </section>
+
       <section class="card panel" id="panel-graph">
         <h2>Facility graph</h2>
         <p class="sub">Click a corridor to block or clear it. Blocking closes both directions.</p>
@@ -213,15 +243,15 @@ footer { color: var(--muted); font-size: 13px; padding: 0 0 32px; }
         </div>
       </section>
 
-      <section class="card panel live-only" id="panel-mcp">
-        <h2>MCP server <span class="pill">Local server only</span></h2>
-        <p class="sub">The MCP server is what Claude Web connects to, so it has to run as a real server, not inside this page. In Local server mode these buttons check that it answers and list its tools. Start it with <code>python mcp_server.py --http --allowed-host YOUR-DOMAIN</code>; the public check also needs ngrok running.</p>
+      <section class="card panel" id="panel-mcp">
+        <h2>MCP server</h2>
+        <p class="sub">The MCP server runs on the edge laptop and is published through ngrok; it's what Claude Web connects to. These buttons talk to it straight from this page, over MCP: they list its tools and read the live graph. Start it with <code>python mcp_server.py --http --allowed-host YOUR-DOMAIN</code> and run ngrok. To watch the real graph everywhere on this page, switch to <strong>Live edge (MCP)</strong> at the top.</p>
         <div class="row">
+          <button class="primary" id="mcp-public">Check public (ngrok)</button>
           <button id="mcp-local">Check local (127.0.0.1:8000)</button>
-          <button id="mcp-public">Check public (ngrok)</button>
         </div>
         <div class="result" id="m-result"></div>
-        <p class="sub" style="margin-top:10px">To use it from Claude Web: Settings → Connectors → Add custom connector, with your ngrok URL ending in <code>/mcp</code>.</p>
+        <p class="sub" style="margin-top:10px">To use it from Claude Web: Settings → Connectors → Add custom connector, with the URL <code id="mcp-url-shown"></code>.</p>
       </section>
 
       <section class="card changelog" id="changelog">
@@ -305,6 +335,13 @@ const sim = (() => {
     setBlocked(a, b, on) { const k = key(a, b); if (!dist.has(k)) return false; on ? blocked.add(k) : blocked.delete(k); return true; },
     reset() { blocked = new Set(); },
     propose, shortest,
+    // Shortest route on another graph state (e.g. the live one read over MCP),
+    // leaving this page's own simulated state untouched.
+    shortestWith(blockedPairs, origin, destination) {
+      const saved = blocked;
+      blocked = new Set(blockedPairs.map(([a, b]) => key(a, b)));
+      try { return shortest(origin, destination); } finally { blocked = saved; }
+    },
   };
 })();
 
@@ -318,15 +355,90 @@ async function api(path, body) {
   if (!res.ok) throw new Error(data.detail || `HTTP ${res.status}`);
   return data;
 }
+// A minimal MCP client (streamable HTTP, JSON-RPC) so the page can call the
+// MCP server directly. Every request carries ngrok-skip-browser-warning, or the
+// free ngrok tier answers with its HTML interstitial instead of MCP.
+function makeMcpClient(url) {
+  let session = null, protocol = null, nextId = 1;
+  const headers = () => ({
+    "Content-Type": "application/json", "Accept": "application/json, text/event-stream",
+    "ngrok-skip-browser-warning": "true",
+    ...(session ? { "Mcp-Session-Id": session } : {}), ...(protocol ? { "Mcp-Protocol-Version": protocol } : {}),
+  });
+  async function post(message) {
+    const res = await fetch(url, { method: "POST", headers: headers(), body: JSON.stringify(message) });
+    if (res.status === 404 && session) { session = null; const e = new Error("MCP session expired"); e.expired = true; throw e; }
+    const type = res.headers.get("content-type") || "";
+    if (type.includes("text/html")) throw new Error("Got a web page instead of MCP: check the URL ends in /mcp and the server is running.");
+    if (!res.ok && res.status !== 202) throw new Error(`MCP server answered HTTP ${res.status}: ${(await res.text()).slice(0, 160)}`);
+    const sid = res.headers.get("mcp-session-id"); if (sid) session = sid;
+    if (message.id === undefined || res.status === 202) return null;
+    const text = await res.text();
+    let reply = null;
+    if (type.includes("text/event-stream")) {
+      for (const line of text.split(/\r?\n/)) {
+        if (!line.startsWith("data:")) continue;
+        const m = JSON.parse(line.slice(5)); if (m.id === message.id) reply = m;
+      }
+    } else reply = JSON.parse(text);
+    if (!reply) throw new Error("The MCP server sent no reply.");
+    if (reply.error) throw new Error(`MCP error: ${reply.error.message}`);
+    return reply.result;
+  }
+  async function connect() {
+    session = null; protocol = null;
+    const r = await post({ jsonrpc: "2.0", id: nextId++, method: "initialize", params: {
+      protocolVersion: "2025-06-18", capabilities: {}, clientInfo: { name: "foguard-dashboard", version: "1" } } });
+    protocol = r.protocolVersion;
+    await post({ jsonrpc: "2.0", method: "notifications/initialized" });
+    return r;
+  }
+  async function request(method, params) {
+    if (!session) await connect();
+    try { return await post({ jsonrpc: "2.0", id: nextId++, method, params }); }
+    catch (e) { if (!e.expired) throw e; await connect(); return post({ jsonrpc: "2.0", id: nextId++, method, params }); }
+  }
+  return {
+    url,
+    async listTools() { return (await request("tools/list", {})).tools.map((t) => t.name); },
+    async call(name, args = {}) {
+      const r = await request("tools/call", { name, arguments: args });
+      const text = (r.content || []).map((c) => c.text || "").join("");
+      if (r.isError) throw new Error(`${name} failed: ${text}`);
+      return r.structuredContent ?? JSON.parse(text);
+    },
+  };
+}
+let mcp = null;  // client for the Live edge mode
+const mcpClient = () => {
+  const url = $("mcp-url").value.trim();
+  if (!mcp || mcp.url !== url) mcp = makeMcpClient(url);
+  return mcp;
+};
+const READ_ONLY = "Live edge mode is read-only: the real graph changes only when the edge node reports. Run python -m vision.trigger_node --visual-demo on the edge laptop and this page updates within a few seconds, or switch to Browser mode to try it here.";
+
 const backend = {
-  topology: () => mode === "live" ? api("/api/topology") : Promise.resolve(sim.topology()),
+  topology: () => mode === "live" ? api("/api/topology")
+    : mode === "mcp" ? mcpClient().call("get_workspace_topology") : Promise.resolve(sim.topology()),
   setBlocked: (a, b, on) => mode === "live" ? api("/api/corridor", { a, b, blocked: on })
+    : mode === "mcp" ? Promise.reject(new Error(READ_ONLY))
     : (sim.setBlocked(a, b, on), Promise.resolve(sim.topology())),
-  reset: () => mode === "live" ? api("/api/reset", {}) : (sim.reset(), Promise.resolve(sim.topology())),
+  reset: () => mode === "live" ? api("/api/reset", {})
+    : mode === "mcp" ? Promise.reject(new Error(READ_ONLY)) : (sim.reset(), Promise.resolve(sim.topology())),
   verify: (origin, destination, path) => mode === "live" ? api("/api/verify", { origin, destination, path })
+    : mode === "mcp" ? mcpClient().call("propose_recovery_route", { origin, destination, proposed_path: path })
     : Promise.resolve(sim.propose(origin, destination, path)),
-  shortest: (origin, destination) => mode === "live" ? api("/api/shortest", { origin, destination, path: [] })
-    : Promise.resolve(sim.shortest(origin, destination)),
+  // There's no shortest-route MCP tool: compute it in the page on the live graph
+  // (the page's search is checked against the Python one), then verify over MCP.
+  shortest: async (origin, destination) => {
+    if (mode === "live") return api("/api/shortest", { origin, destination, path: [] });
+    if (mode !== "mcp") return sim.shortest(origin, destination);
+    const live = await backend.topology();
+    const r = sim.shortestWith(live.blocked_corridors, origin, destination);
+    if (!r.valid) return r;
+    const check = await backend.verify(origin, destination, r.path);
+    return check.approved ? r : { valid: false, reason: check.reason };
+  },
 };
 
 // ---------------------------------------------------------------- agent
@@ -336,13 +448,16 @@ const backend = {
 const SDK_URL = "https://cdn.jsdelivr.net/npm/@anthropic-ai/sdk@0.131.0/+esm";
 const MAX_AGENT_TURNS = 12;
 
-function makeBrowserAgent(Anthropic, sim, DATA) {
+// graph: the in-page simulation, or an adapter over the live MCP server
+// (topology/propose may be async; no setBlocked on the read-only live graph).
+function makeBrowserAgent(Anthropic, graph, DATA) {
   return async function runAgent(apiKey, log) {
     const client = new Anthropic({ apiKey, dangerouslyAllowBrowser: true });
     const cfg = DATA.agent; const fac = DATA.facility;
-    let blocked = sim.topology().blocked_corridors;
+    let blocked = (await graph.topology()).blocked_corridors;
     if (!blocked.length) {
-      sim.setBlocked(...fac.monitored_corridor, true);
+      if (!graph.setBlocked) throw new Error("No corridor is blocked in the live graph yet. Trigger the edge node first.");
+      graph.setBlocked(...fac.monitored_corridor, true);
       blocked = [fac.monitored_corridor];
       log(`[trigger] No corridor was blocked; simulated an obstruction on ${fac.monitored_corridor.join(" <-> ")}`);
     }
@@ -350,14 +465,14 @@ function makeBrowserAgent(Anthropic, sim, DATA) {
       destination: fac.destination, timestamp: new Date().toISOString().replace(/\.\d+Z$/, "+00:00") };
     const messages = [{ role: "user", content: `FoGuard incident report:\n${JSON.stringify(incident, null, 2)}` }];
     const proposals = []; let approved = null;
-    const runTool = (name, input) => {
+    const runTool = async (name, input) => {
       if (name === "get_workspace_topology") {
-        const t = sim.topology();
+        const t = await graph.topology();
         log(`  <- topology: blocked corridors ${JSON.stringify(t.blocked_corridors)}`);
         return t;
       }
       if (name === "propose_recovery_route") {
-        const r = sim.propose(input.origin, input.destination, input.proposed_path || []);
+        const r = await graph.propose(input.origin, input.destination, input.proposed_path || []);
         proposals.push({ path: input.proposed_path, ...r });
         if (r.approved) { approved = r; log(`  <- APPROVED ${r.route.join("-")} (${r.total_distance_m} m)`); }
         else log(`  <- REJECTED ${(input.proposed_path || []).join("-")}: ${r.reason}`);
@@ -365,7 +480,7 @@ function makeBrowserAgent(Anthropic, sim, DATA) {
       }
       return { error: `Unknown tool ${name}` };
     };
-    log(`[agent] ${cfg.model} handling the incident in your browser (notices will be drafts)`);
+    log(`[agent] ${cfg.model} handling the incident from your browser (notices will be drafts)`);
     for (let turn = 0; turn < MAX_AGENT_TURNS; turn++) {
       const res = await client.beta.messages.create({
         model: cfg.model, max_tokens: 16000, system: cfg.system, tools: cfg.tools, messages,
@@ -380,10 +495,12 @@ function makeBrowserAgent(Anthropic, sim, DATA) {
         return { incident, approved_route: approved, proposals, final_text };
       }
       // Answer every tool call from this turn in one message.
-      messages.push({ role: "user", content: uses.map((u) => {
+      const results = [];
+      for (const u of uses) {
         log(`  -> ${u.name}(${u.input && Object.keys(u.input).length ? JSON.stringify(u.input) : ""})`);
-        return { type: "tool_result", tool_use_id: u.id, content: JSON.stringify(runTool(u.name, u.input || {})) };
-      }) });
+        results.push({ type: "tool_result", tool_use_id: u.id, content: JSON.stringify(await runTool(u.name, u.input || {})) });
+      }
+      messages.push({ role: "user", content: results });
     }
     throw new Error(`The agent didn't finish within ${MAX_AGENT_TURNS} turns.`);
   };
@@ -396,8 +513,22 @@ let lastTopology = null; let routeShown = [];
 function setResult(el, ok, text) { el.className = "result " + (ok ? "ok" : "bad"); el.textContent = text; }
 function clearOut(...els) { els.forEach((e) => { e.textContent = ""; e.className = e.className.replace(/ (ok|bad)/, ""); }); }
 
+// The feed shows whatever the graph says about the monitored corridor, so the
+// image can never disagree with the routing.
+function updateFeed(topo) {
+  const [a, b] = DATA.facility.monitored_corridor;
+  const blocked = topo.blocked_corridors.some((c) => [...c].sort().join() === [a, b].sort().join());
+  const src = blocked ? DATA.feed.blocked : DATA.feed.open;
+  const img = $("feed-img"), status = $("feed-status");
+  if (src && img.getAttribute("src") !== src) img.setAttribute("src", src);
+  img.alt = blocked ? "Camera view of corridor: boxes have fallen and block the aisle" : "Camera view of corridor: open aisle";
+  status.className = "feed-status " + (blocked ? "blocked" : "clear");
+  status.textContent = blocked ? "Status: OBSTRUCTION DETECTED" : "Status: CLEAR";
+}
+
 function drawMap(topo) {
   lastTopology = topo;
+  updateFeed(topo);
   const svg = $("map"); svg.textContent = "";
   const ns = "http://www.w3.org/2000/svg";
   const el = (tag, attrs, text) => { const e = document.createElementNS(ns, tag);
@@ -459,15 +590,50 @@ function renderFeatures() {
 }
 
 // ---------------------------------------------------------------- modes
+// Live edge mode re-reads the real graph over MCP every few seconds, so the
+// map and the camera feed follow the edge node without a refresh.
+const POLL_MS = 3000;
+let pollTimer = null, polling = false, lastLiveJson = "";
+function stopPolling() { clearInterval(pollTimer); pollTimer = null; }
+async function pollLive() {
+  if (polling || mode !== "mcp") return;
+  polling = true;
+  const conn = $("conn");
+  try {
+    const topo = await backend.topology();
+    const json = JSON.stringify(topo.corridors);
+    if (json !== lastLiveJson) {
+      lastLiveJson = json;
+      // Show the verified reroute whenever the live graph has a blockage.
+      const { origin: o, destination: d } = DATA.facility;
+      const r = topo.blocked_corridors.length ? sim.shortestWith(topo.blocked_corridors, o, d) : null;
+      routeShown = r && r.valid ? r.path : [];
+      drawMap(topo);
+    }
+    conn.className = "pill ok";
+    conn.innerHTML = `<span class="dot"></span>live edge · ${new Date().toLocaleTimeString()}`;
+  } catch (e) {
+    conn.className = "pill bad"; conn.innerHTML = '<span class="dot"></span>edge unreachable';
+    $("mode-note").textContent = `Live edge mode can't reach the MCP server at ${$("mcp-url").value}: ${e.message}. Is mcp_server.py running with ngrok?`;
+  } finally { polling = false; }
+}
+
 async function setMode(next) {
   mode = next; storage.set("foguard-mode", next);
-  $("mode-sim").setAttribute("aria-pressed", next === "sim"); $("mode-live").setAttribute("aria-pressed", next === "live");
+  for (const [id, m] of [["mode-sim", "sim"], ["mode-mcp", "mcp"], ["mode-live", "live"]]) $(id).setAttribute("aria-pressed", next === m);
   const conn = $("conn");
-  document.querySelectorAll(".live-only").forEach((p) => p.dataset.disabled = String(next !== "live"));
-  for (const id of ["mcp-local", "mcp-public"]) $(id).disabled = next !== "live";
-  $("api-url").hidden = next !== "live";
+  stopPolling(); lastLiveJson = "";
+  $("api-url").hidden = next !== "live"; $("mcp-url").hidden = next !== "mcp";
   $("a-key-row").hidden = next === "live"; $("fo-env-note").hidden = next !== "live"; $("fo-handoff").hidden = true;
   routeShown = [];
+  if (next === "mcp") {
+    conn.className = "pill warn"; conn.innerHTML = '<span class="dot"></span>connecting…';
+    $("mode-note").textContent = `Live edge mode: this page follows the real graph on the edge laptop through its MCP server (${$("mcp-url").value}), refreshing every ${POLL_MS / 1000} s. Run python -m vision.trigger_node --visual-demo there and watch the feed and map change. It's read-only: route checks and the Claude agent use the real graph, but corridors can't be changed from here.`;
+    $("agent-note").textContent = "The agent's tools call the live MCP server, so Claude reasons over the real graph. Your key goes only to api.anthropic.com and isn't stored unless you tick Remember.";
+    await pollLive();
+    pollTimer = setInterval(pollLive, POLL_MS);
+    return;
+  }
   if (next === "sim") {
     conn.className = "pill ok"; conn.innerHTML = '<span class="dot"></span>runs in this page';
     $("mode-note").textContent = "Browser mode: everything runs right here, with no server. The graph and route verifier are a JavaScript copy of the Python code, checked against it in 2,560 cases. The Claude agent calls the Claude API directly with your own key.";
@@ -500,9 +666,19 @@ function init() {
   $("v-origin").innerHTML = opts; $("v-dest").innerHTML = opts;
   $("v-origin").value = DATA.facility.origin; $("v-dest").value = DATA.facility.destination;
   $("t-corridor").textContent = DATA.facility.monitored_corridor.join(" ↔ ");
+  document.querySelectorAll(".feed-corridor").forEach((e) => { e.textContent = DATA.facility.monitored_corridor.join(" ↔ "); });
+  if (!DATA.feed.open || !DATA.feed.blocked) { $("feed").hidden = true; $("feed-missing").hidden = false; }
+  else for (const src of [DATA.feed.open, DATA.feed.blocked]) { const pre = new Image(); pre.src = src; }  // no flicker on swap
 
   $("mode-sim").onclick = () => setMode("sim");
   $("mode-live").onclick = () => setMode("live");
+  $("mode-mcp").onclick = () => setMode("mcp");
+  $("mcp-url").value = storage.get("foguard-mcp-url") || DATA.mcp.public_url;
+  $("mcp-url-shown").textContent = $("mcp-url").value;
+  $("mcp-url").onchange = () => {
+    storage.set("foguard-mcp-url", $("mcp-url").value.trim()); $("mcp-url-shown").textContent = $("mcp-url").value;
+    if (mode === "mcp") setMode("mcp");
+  };
   $("api-url").onchange = () => { storage.set("foguard-api", $("api-url").value); if (mode === "live") setMode("live"); };
   $("theme").onclick = () => {
     const dark = document.documentElement.dataset.theme
@@ -525,7 +701,21 @@ function init() {
   });
 
   let lastPrompt = "";
-  $("trigger").onclick = () => run($("t-result"), async () => {
+  // Same text as vision/trigger_node.build_recovery_prompt, from its templates.
+  const fillTemplate = (t, vals) => t.replace(/\{(\w+)\}/g, (m, k) => (k in vals ? vals[k] : m));
+  const pyJson = (o) => "{" + Object.entries(o).map(([k, v]) => JSON.stringify(k) + ": " +
+    (Array.isArray(v) ? "[" + v.map((x) => JSON.stringify(x)).join(", ") + "]" : JSON.stringify(v))).join(", ") + "}";
+  const buildRecoveryPrompt = (incident, reroute) => {
+    const t = DATA.recovery_prompt;
+    const line = reroute.valid
+      ? fillTemplate(t.reroute_found, { path: reroute.path.join("-"), distance: String(reroute.total_distance) })
+      : fillTemplate(t.reroute_none, { reason: reroute.reason });
+    return fillTemplate(t.template, { from_id: incident.blocked_corridor[0], to_id: incident.blocked_corridor[1],
+      timestamp: incident.timestamp, origin: incident.origin, destination: incident.destination,
+      reroute_line: line, incident_json: pyJson(incident) });
+  };
+  const runTrigger = async () => {
+    if (mode === "mcp") throw new Error(READ_ONLY);
     clearOut($("t-out"));
     let out;
     if (mode === "live") out = await api("/api/trigger/mock", {});
@@ -533,7 +723,8 @@ function init() {
       const [a, b] = DATA.facility.monitored_corridor; sim.setBlocked(a, b, true);
       const incident = { event: "OBSTRUCTION_DETECTED", blocked_corridor: [a, b], origin: DATA.facility.origin,
         destination: DATA.facility.destination, timestamp: new Date().toISOString().replace(/\.\d+Z$/, "+00:00") };
-      out = { incident, reroute: sim.shortest(incident.origin, incident.destination), prompt: null };
+      const reroute = sim.shortest(incident.origin, incident.destination);
+      out = { incident, reroute, prompt: buildRecoveryPrompt(incident, reroute) };
     }
     routeShown = out.reroute.valid ? out.reroute.path : []; drawMap(await backend.topology());
     $("t-out").textContent = JSON.stringify(out.incident, null, 2) + (out.prompt ? "\n\n--- recovery prompt for Claude Web ---\n" + out.prompt : "");
@@ -541,10 +732,27 @@ function init() {
     const [a, b] = out.incident.blocked_corridor;
     return [true, `Obstruction on ${a} ↔ ${b}: corridor blocked in the graph. Reroute: ` +
       (out.reroute.valid ? `${out.reroute.path.join(" → ")} (${out.reroute.total_distance} m)` : out.reroute.reason)];
+  };
+  $("trigger").onclick = () => run($("t-result"), runTrigger);
+
+  $("feed-trigger").onclick = () => run($("feed-result"), async () => {
+    $("feed-trigger").disabled = true;
+    try {
+      const summary = await runTrigger();  // blocks the corridor; drawMap swaps the feed
+      setResult($("t-result"), summary[0], summary[1]);
+      $("feed-next").hidden = false;
+      return summary;
+    } finally { $("feed-trigger").disabled = false; }
+  });
+  $("feed-reset").onclick = () => run($("feed-result"), async () => {
+    const [a, b] = DATA.facility.monitored_corridor;
+    routeShown = []; drawMap(await backend.setBlocked(a, b, false)); $("feed-next").hidden = true;
+    return [true, `Corridor ${a} ↔ ${b} cleared. Feed back to baseline.`];
   });
   $("t-copy").onclick = async () => { try { await navigator.clipboard.writeText(lastPrompt); $("t-copy").textContent = "Copied"; } catch { $("t-copy").textContent = "Copy failed"; } };
 
   $("demo").onclick = () => run($("d-result"), async () => {
+    if (mode === "mcp") return [false, "The demo resets and blocks corridors, so it runs in Browser or Local server mode. Live edge mode only follows the real graph."];
     $("d-out").textContent = "Running…";
     if (mode === "live") {
       const r = await api("/api/demo", {}); $("d-out").textContent = r.output; await refresh();
@@ -619,13 +827,17 @@ function init() {
       const lines = [];
       const log = (line) => { lines.push(line); $("a-out").textContent = lines.join("\n"); };
       let r;
-      try { r = await makeBrowserAgent(Anthropic, sim, DATA)(key, log); }
+      // In Live edge mode Claude's tools call the real MCP server.
+      const graph = mode === "mcp"
+        ? { topology: () => backend.topology(), propose: (o, d, p) => backend.verify(o, d, p) }
+        : sim;
+      try { r = await makeBrowserAgent(Anthropic, graph, DATA)(key, log); }
       catch (e) {
         const status = e.status ? ` (HTTP ${e.status})` : "";
         throw new Error(e.status === 401 ? "The Anthropic API rejected that key." : `Claude API error${status}: ${e.message}`);
       }
       $("a-out").textContent = lines.join("\n") + "\n\n" + r.final_text;
-      routeShown = r.approved_route ? r.approved_route.route : []; drawMap(sim.topology());
+      routeShown = r.approved_route ? r.approved_route.route : []; drawMap(await backend.topology());
       showHandoff(r.incident, r);
       return agentSummary(r);
     } finally { $("agent").disabled = false; }
@@ -647,13 +859,22 @@ function init() {
     } finally { $("replay").disabled = false; }
   });
 
-  const mcpCheck = (target) => run($("m-result"), async () => {
-    $("m-result").className = "result"; $("m-result").textContent = "Checking…";
-    const r = await api(`/api/mcp?target=${target}`);
-    return r.reachable ? [true, `Reachable at ${r.url}. Tools: ${r.tools.join(", ")}`] : [false, `Not reachable at ${r.url}: ${r.error}`];
+  // Straight from the browser to the MCP server: list its tools and read the graph.
+  const mcpCheck = (url) => run($("m-result"), async () => {
+    $("m-result").className = "result"; $("m-result").textContent = `Connecting to ${url}…`;
+    try {
+      const client = makeMcpClient(url);
+      const toolsList = await client.listTools();
+      const topo = await client.call("get_workspace_topology");
+      const blocked = topo.blocked_corridors.length ? topo.blocked_corridors.map((c) => c.join(" ↔ ")).join(", ") : "none";
+      return [true, `Reachable at ${url}. Tools: ${toolsList.join(", ")}. Live graph: ${topo.corridors.length} corridors, blocked: ${blocked}.`];
+    } catch (e) {
+      const hint = e instanceof TypeError ? " (the browser couldn't connect: is mcp_server.py running, and ngrok for the public URL? Chrome may also ask to allow local network access for the local check.)" : "";
+      return [false, `Not reachable at ${url}: ${e.message}${hint}`];
+    }
   });
-  $("mcp-local").onclick = () => mcpCheck("local");
-  $("mcp-public").onclick = () => mcpCheck("public");
+  $("mcp-local").onclick = () => mcpCheck(DATA.mcp.local_url);
+  $("mcp-public").onclick = () => mcpCheck($("mcp-url").value.trim() || DATA.mcp.public_url);
 
   const savedTheme = storage.get("foguard-theme"); if (savedTheme) document.documentElement.dataset.theme = savedTheme;
   const savedKey = storage.get("foguard-key"); if (savedKey) { $("a-key").value = savedKey; $("a-remember").checked = true; }
@@ -661,7 +882,8 @@ function init() {
   // Served by api_server.py itself: talk to the same origin and start in Live mode.
   const servedByApi = /^https?:\/\/(127\.0\.0\.1|localhost):8001$/.test(location.origin);
   if (servedByApi) $("api-url").value = location.origin;
-  setMode(servedByApi ? "live" : (storage.get("foguard-mode") === "live" ? "live" : "sim"));
+  const savedMode = storage.get("foguard-mode");
+  setMode(servedByApi ? "live" : (["live", "mcp"].includes(savedMode) ? savedMode : "sim"));
 }
 init();
 </script>

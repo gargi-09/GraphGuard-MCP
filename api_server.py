@@ -21,13 +21,14 @@ from pathlib import Path
 import anthropic
 import uvicorn
 from dotenv import load_dotenv
-from fastapi import FastAPI, HTTPException, Request
+from fastapi import FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
 from mcp import Client
 from pydantic import BaseModel
 
 from graph import tools
+from mcp_server import LOCAL_MCP_URL, PUBLIC_MCP_URL
 from graph.init_db import DB_PATH, LOCATIONS, cloud_sync_folder
 from recovery_agent import MODEL, build_fo_prompt, run_recovery
 from vision.trigger_node import MONITORED_CORRIDOR, build_recovery_prompt, report_obstruction
@@ -37,10 +38,7 @@ load_dotenv()
 ROOT = Path(__file__).resolve().parent
 PORT = 8001
 LOCATION_IDS = {loc_id for loc_id, _ in LOCATIONS}
-MCP_TARGETS = {
-    "local": "http://127.0.0.1:8000/mcp",
-    "public": os.getenv("MCP_PUBLIC_URL", "https://catalog-jimmy-canyon.ngrok-free.dev/mcp"),
-}
+MCP_TARGETS = {"local": LOCAL_MCP_URL, "public": PUBLIC_MCP_URL}
 
 app = FastAPI(title="FoGuard API")
 
@@ -48,19 +46,11 @@ allowed_origins = [
     f"http://127.0.0.1:{PORT}", f"http://localhost:{PORT}",
     *[o.strip().rstrip("/") for o in os.getenv("DASHBOARD_ORIGIN", "").split(",") if o.strip()],
 ]
+# allow_private_network: Chrome asks before a public site (github.io) may call
+# a server on this machine; this is the server's half of that opt-in.
 app.add_middleware(CORSMiddleware, allow_origins=allowed_origins,
-                   allow_methods=["GET", "POST"], allow_headers=["Content-Type"])
-
-
-@app.middleware("http")
-async def private_network_access(request: Request, call_next):
-    # Chrome asks before a public site (github.io) may call a server on this
-    # machine; this header is the server's half of that opt-in.
-    response = await call_next(request)
-    origin = request.headers.get("origin", "").rstrip("/")
-    if origin in allowed_origins:
-        response.headers["Access-Control-Allow-Private-Network"] = "true"
-    return response
+                   allow_methods=["GET", "POST"], allow_headers=["Content-Type"],
+                   allow_private_network=True)
 
 
 def check_location(loc_id: str):

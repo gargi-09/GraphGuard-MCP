@@ -1,12 +1,16 @@
-"""Rebuild docs/data.js from docs/features.json and the graph's seed data.
+"""Rebuild docs/data.js and the web copies of the demo images.
 
-    python scripts/build_dashboard.py          # write docs/data.js
-    python scripts/build_dashboard.py --check  # exit 1 if docs/data.js is stale
+    python scripts/build_dashboard.py          # write docs/data.js and docs/demo_assets/
+    python scripts/build_dashboard.py --check  # exit 1 if either is stale
 
 The dashboard's Simulation mode runs the graph in JavaScript, so its seed data
 is generated from graph/init_db.py rather than copied by hand. data.js is a
 script (not JSON fetched at runtime) so docs/index.html also works when opened
 straight from disk.
+
+GitHub Pages serves only docs/, so the Edge Vision Node Feed panel can't load
+the originals in demo_assets/. They are copied to docs/demo_assets/ under the
+same names, scaled down for the web.
 """
 import json
 import sys
@@ -16,12 +20,48 @@ ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(ROOT))
 
 from graph.init_db import CORRIDORS, LOCATIONS  # noqa: E402
+from mcp_server import LOCAL_MCP_URL, PUBLIC_MCP_URL  # noqa: E402
 from recovery_agent import browser_agent_config  # noqa: E402
-from vision.trigger_node import DESTINATION, MONITORED_CORRIDOR, ORIGIN  # noqa: E402
+from vision.trigger_node import (  # noqa: E402
+    BLOCKED_CORRIDOR_IMAGE, DESTINATION, MONITORED_CORRIDOR, OPEN_CORRIDOR_IMAGE, ORIGIN,
+    RECOVERY_PROMPT_TEMPLATE, REROUTE_FOUND, REROUTE_NONE)
 
 FEATURES = ROOT / "docs" / "features.json"
 RECORDED_RUN = ROOT / "docs" / "recorded_run.json"  # from scripts/record_agent_run.py
 OUTPUT = ROOT / "docs" / "data.js"
+WEB_ASSETS = ROOT / "docs" / "demo_assets"
+WEB_IMAGE_WIDTH = 1280
+WEB_JPEG_QUALITY = 82
+# Source image -> path the page loads it from (relative, so it works on Pages).
+FEED_IMAGES = {"open": OPEN_CORRIDOR_IMAGE, "blocked": BLOCKED_CORRIDOR_IMAGE}
+
+
+def web_image_path(source: Path) -> Path:
+    return WEB_ASSETS / f"{source.stem}.jpg"
+
+
+def stale_web_images() -> list[Path]:
+    return [web_image_path(src) for src in FEED_IMAGES.values()
+            if src.is_file() and (not web_image_path(src).is_file()
+                                  or web_image_path(src).stat().st_mtime < src.stat().st_mtime)]
+
+
+def write_web_images():
+    import cv2
+
+    WEB_ASSETS.mkdir(exist_ok=True)
+    for src in FEED_IMAGES.values():
+        if not src.is_file():
+            print(f"Skipping missing {src.relative_to(ROOT)}")
+            continue
+        img = cv2.imread(str(src))
+        h, w = img.shape[:2]
+        if w > WEB_IMAGE_WIDTH:
+            img = cv2.resize(img, (WEB_IMAGE_WIDTH, round(h * WEB_IMAGE_WIDTH / w)),
+                             interpolation=cv2.INTER_AREA)
+        out = web_image_path(src)
+        cv2.imwrite(str(out), img, [cv2.IMWRITE_JPEG_QUALITY, WEB_JPEG_QUALITY])
+        print(f"Wrote {out.relative_to(ROOT)} ({out.stat().st_size // 1024} KB)")
 
 
 def build() -> str:
@@ -31,6 +71,11 @@ def build() -> str:
         "agent": browser_agent_config(),
         "recorded_run": (json.loads(RECORDED_RUN.read_text(encoding="utf-8"))
                          if RECORDED_RUN.exists() else None),
+        "recovery_prompt": {"template": RECOVERY_PROMPT_TEMPLATE,
+                            "reroute_found": REROUTE_FOUND, "reroute_none": REROUTE_NONE},
+        "mcp": {"public_url": PUBLIC_MCP_URL, "local_url": LOCAL_MCP_URL},
+        "feed": {state: (f"./demo_assets/{web_image_path(src).name}" if src.is_file() else None)
+                 for state, src in FEED_IMAGES.items()},
         "facility": {
             "locations": [{"id": i, "name": n} for i, n in LOCATIONS],
             "corridors": [{"a": a, "b": b, "distance_m": d} for a, b, d in CORRIDORS],
@@ -48,10 +93,13 @@ if __name__ == "__main__":
     content = build()
     if "--check" in sys.argv:
         current = OUTPUT.read_text(encoding="utf-8") if OUTPUT.exists() else ""
-        if current != content:
-            print("docs/data.js is out of date; run python scripts/build_dashboard.py")
+        stale = stale_web_images()
+        if current != content or stale:
+            print("docs/data.js or docs/demo_assets/ is out of date; "
+                  "run python scripts/build_dashboard.py")
             sys.exit(1)
-        print("docs/data.js is up to date")
+        print("docs/data.js and docs/demo_assets/ are up to date")
     else:
         OUTPUT.write_text(content, encoding="utf-8")
         print(f"Wrote {OUTPUT.relative_to(ROOT)}")
+        write_web_images()
